@@ -53,11 +53,12 @@ test("serves WhatsApp dashboard status without starting a session", async () => 
   try {
     const response = await fetch(`${baseUrl}/whatsapp/status`);
     const result = await response.json();
+    const expectedEnabled = process.env.WHATSAPP_ENABLED !== "false";
 
     assert.equal(response.status, 200);
-    assert.equal(result.enabled, true);
+    assert.equal(result.enabled, expectedEnabled);
     assert.equal(result.ready, false);
-    assert.equal(result.status, "idle");
+    assert.equal(result.status, expectedEnabled ? "idle" : "disabled");
     assert.ok(result.search.terms.includes("minning sales order"));
   } finally {
     await close();

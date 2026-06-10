@@ -42,19 +42,21 @@ const syncState = {
 };
 
 export function getWhatsAppStatus(config) {
+  const enabled = Boolean(config.whatsappEnabled);
+
   return {
-    enabled: Boolean(config.whatsappEnabled),
-    status: clientState.status,
-    starting: clientState.starting,
-    authenticated: clientState.authenticated,
-    ready: clientState.ready,
-    hasQr: Boolean(clientState.qrDataUrl),
-    qrDataUrl: clientState.qrDataUrl,
-    loading: clientState.loading,
+    enabled,
+    status: enabled ? clientState.status : "disabled",
+    starting: enabled ? clientState.starting : false,
+    authenticated: enabled ? clientState.authenticated : false,
+    ready: enabled ? clientState.ready : false,
+    hasQr: enabled ? Boolean(clientState.qrDataUrl) : false,
+    qrDataUrl: enabled ? clientState.qrDataUrl : null,
+    loading: enabled ? clientState.loading : null,
     lastQrAt: clientState.lastQrAt,
     lastReadyAt: clientState.lastReadyAt,
     lastDisconnectedAt: clientState.lastDisconnectedAt,
-    lastError: clientState.lastError,
+    lastError: enabled ? clientState.lastError : "WhatsApp dashboard is disabled by WHATSAPP_ENABLED=false.",
     search: {
       terms: config.whatsappSearchTerms,
       chatLimit: config.whatsappChatLimit,

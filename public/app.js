@@ -260,7 +260,9 @@ async function startWhatsAppLogin() {
         method: "POST"
       }),
     success: (status) =>
-      status.ready
+      !status.enabled
+        ? "WhatsApp QR login is disabled in this deployment."
+        : status.ready
         ? "WhatsApp is connected."
         : status.hasQr
           ? "QR code is ready."
@@ -327,7 +329,7 @@ function updateWhatsAppStatus(status) {
   whatsappLoginStatus.textContent = formatWhatsAppLoginStatus(status);
   whatsappScanStatus.textContent = formatWhatsAppScanStatus(status);
   whatsappScanButton.disabled = !status.ready || sync.running;
-  whatsappStartButton.disabled = status.starting;
+  whatsappStartButton.disabled = !status.enabled || status.starting;
 
   kpis.whatsappConnection.textContent = statusLabel;
   kpis.whatsappScanned.textContent = String(sync.lastScannedMessages || 0);
@@ -1174,6 +1176,9 @@ function formatWhatsAppConnection(status) {
 }
 
 function formatWhatsAppLoginStatus(status) {
+  if (status && !status.enabled) {
+    return "WhatsApp QR login is disabled on this serverless deployment. Run locally or on a persistent Node host to scan WhatsApp.";
+  }
   if (status?.lastError) {
     return status.lastError;
   }
@@ -1193,6 +1198,9 @@ function formatWhatsAppLoginStatus(status) {
 }
 
 function formatWhatsAppScanStatus(status) {
+  if (status && !status.enabled) {
+    return "WhatsApp scanning is unavailable while WHATSAPP_ENABLED=false.";
+  }
   const sync = status?.sync || {};
   if (sync.running) {
     return "WhatsApp scan running.";
