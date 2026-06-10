@@ -1,0 +1,39 @@
+{
+  "currency": "INR",
+  "defaultUnit": "ton",
+  "autoCreatePolicy": {
+    "allowNewCustomers": false,
+    "defaultDocumentType": "auto",
+    "customerInquiryDocumentType": "salesInquiry",
+    "minimumConfidence": 0.72
+  },
+  "products": [
+    {
+      "name": "Iron ore",
+      "aliases": ["iron ore", "iron ores", "fe ore"],
+      "materialCode": "TG11",
+      "minPricePerTon": 10000,
+      "targetMarginPercent": 12,
+      "requiresApprovalQuantityAbove": 5000,
+      "maxAutoValue": 25000000,
+      "unit": "ton"
+    }
+  ],
+  "customerRules": [
+    {
+      "tier": "strategic",
+      "priceFloorMultiplier": 0.95,
+      "requiresApproval": false
+    },
+    {
+      "tier": "standard",
+      "priceFloorMultiplier": 1,
+      "requiresApproval": false
+    },
+    {
+      "tier": "new",
+      "priceFloorMultiplier": 1,
+      "requiresApproval": true
+    }
+  ]
+}

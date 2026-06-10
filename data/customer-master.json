@@ -1,0 +1,13 @@
+{
+  "customers": [
+    {
+      "id": "CUST-1001",
+      "name": "Real Customer Ltd",
+      "status": "existing",
+      "tier": "strategic",
+      "sapBusinessPartner": "17100001",
+      "emails": ["procurement@realcustomer.example"],
+      "domains": ["realcustomer.example"]
+    }
+  ]
+}

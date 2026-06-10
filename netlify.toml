@@ -1,0 +1,17 @@
+[build]
+  command = "npm test"
+  publish = "public"
+  functions = "netlify/functions"
+
+[build.environment]
+  GMAIL_AUTO_SYNC = "false"
+  NODE_VERSION = "20"
+  OPPORTUNITY_STORE_BACKEND = "file"
+  PUPPETEER_SKIP_DOWNLOAD = "true"
+  SAP_MODE = "mock"
+  WHATSAPP_ENABLED = "false"
+
+[[redirects]]
+  from = "/*"
+  to = "/.netlify/functions/index"
+  status = 200

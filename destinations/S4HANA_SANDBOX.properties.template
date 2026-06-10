@@ -1,0 +1,7 @@
+Name=S4HANA_SANDBOX
+Type=HTTP
+Description=SAP Business Accelerator Hub S/4HANA sandbox
+URL=https://sandbox.api.sap.com/s4hanacloud
+ProxyType=Internet
+Authentication=NoAuthentication
+URL.headers.APIKey=<YOUR_SAP_BUSINESS_ACCELERATOR_HUB_API_KEY>

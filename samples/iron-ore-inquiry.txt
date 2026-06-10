@@ -1,0 +1,4 @@
+From: procurement@realcustomer.example
+Subject: Iron ore requirement
+
+I need 1100 tons of Iron ore / Real customer for a price of 11000 Per ton

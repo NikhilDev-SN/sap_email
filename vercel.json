@@ -1,0 +1,23 @@
+{
+  "version": 2,
+  "installCommand": "PUPPETEER_SKIP_DOWNLOAD=true npm ci",
+  "buildCommand": "npm test",
+  "functions": {
+    "api/index.mjs": {
+      "maxDuration": 60
+    }
+  },
+  "env": {
+    "GMAIL_AUTO_SYNC": "false",
+    "OPPORTUNITY_STORE_BACKEND": "file",
+    "PUPPETEER_SKIP_DOWNLOAD": "true",
+    "SAP_MODE": "mock",
+    "WHATSAPP_ENABLED": "false"
+  },
+  "rewrites": [
+    {
+      "source": "/(.*)",
+      "destination": "/api/index.mjs"
+    }
+  ]
+}

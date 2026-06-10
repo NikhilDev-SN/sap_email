@@ -1,0 +1,345 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>MSPL Offline Opportunities Portal</title>
+    <link rel="stylesheet" href="/styles.css">
+  </head>
+  <body>
+    <main class="app-shell">
+      <aside class="sidebar" aria-label="Primary navigation">
+        <div class="brand">
+          <span class="brand-mark">MS</span>
+          <div>
+            <strong>MSPL Offline Opportunities Portal</strong>
+            <small>Email to SAP approval</small>
+          </div>
+        </div>
+        <nav class="side-nav" aria-label="Views">
+          <button class="nav-button active" type="button" data-view="agent-view">Agent</button>
+          <button class="nav-button" type="button" data-view="whatsapp-view">WhatsApp</button>
+          <button class="nav-button" type="button" data-view="approval-view">Approval</button>
+          <button class="nav-button" type="button" data-view="review-view">Review</button>
+        </nav>
+        <div class="sidebar-status">
+          <span id="runtime-status-text">Checking opportunities</span>
+          <span id="mailbox-status-text">Checking Gmail</span>
+          <span id="whatsapp-status-text">Checking WhatsApp</span>
+          <span id="sync-status-text">Checking sync</span>
+        </div>
+      </aside>
+
+      <section class="main-surface">
+        <section class="view active" id="agent-view" aria-label="Agent chatbot">
+          <header class="view-header">
+            <div>
+              <p class="eyeline">Agent</p>
+              <h1>MSPL Offline Opportunities Portal</h1>
+            </div>
+          </header>
+
+          <section class="chat-panel" aria-label="Agent conversation">
+            <div class="message-list" id="message-list"></div>
+            <form class="chat-composer" id="chat-form">
+              <input id="chat-input" type="text" autocomplete="off" placeholder="Ask about approvals, highest request, customer readiness">
+              <button class="primary" type="submit" id="chat-send-button">Send</button>
+            </form>
+          </section>
+        </section>
+
+        <section class="view" id="whatsapp-view" aria-label="WhatsApp dashboard">
+          <header class="view-header">
+            <div>
+              <p class="eyeline">WhatsApp</p>
+              <h1>WhatsApp sales orders</h1>
+            </div>
+            <div class="view-actions">
+              <button class="secondary" type="button" id="whatsapp-start-button">Start QR login</button>
+              <button class="primary" type="button" id="whatsapp-scan-button">Scan messages</button>
+            </div>
+          </header>
+
+          <section class="kpi-grid" aria-label="WhatsApp summary">
+            <article>
+              <span>Connection</span>
+              <strong id="kpi-whatsapp-connection">Not started</strong>
+            </article>
+            <article>
+              <span>Scanned</span>
+              <strong id="kpi-whatsapp-scanned">0</strong>
+            </article>
+            <article>
+              <span>Matched</span>
+              <strong id="kpi-whatsapp-matched">0</strong>
+            </article>
+            <article>
+              <span>Processed</span>
+              <strong id="kpi-whatsapp-processed">0</strong>
+            </article>
+          </section>
+
+          <p class="action-status" id="whatsapp-action-status" role="status"></p>
+
+          <section class="whatsapp-layout" aria-label="WhatsApp login and message matches">
+            <article class="whatsapp-login-panel">
+              <div class="table-panel-header single">
+                <div>
+                  <h2>QR login</h2>
+                  <p id="whatsapp-login-status">Start the login session to create a QR code.</p>
+                </div>
+              </div>
+              <div class="qr-frame">
+                <img id="whatsapp-qr-image" alt="WhatsApp login QR code" hidden>
+                <span id="whatsapp-qr-placeholder">No QR code yet</span>
+              </div>
+              <dl class="whatsapp-meta" id="whatsapp-meta-list"></dl>
+            </article>
+
+            <article class="table-panel">
+              <div class="table-panel-header">
+                <div>
+                  <h2>Mining sales order messages</h2>
+                  <p id="whatsapp-scan-status">No WhatsApp scan has run yet.</p>
+                </div>
+                <input id="whatsapp-filter" type="search" autocomplete="off" placeholder="Filter WhatsApp matches">
+              </div>
+              <div class="table-scroll">
+                <table class="opportunity-table whatsapp-table">
+                  <thead>
+                    <tr>
+                      <th>Chat</th>
+                      <th>Message</th>
+                      <th>Match</th>
+                      <th>Opportunity</th>
+                    </tr>
+                  </thead>
+                  <tbody id="whatsapp-table-body"></tbody>
+                </table>
+              </div>
+              <p class="empty-state" id="whatsapp-empty-state">No matching WhatsApp messages found.</p>
+            </article>
+          </section>
+        </section>
+
+        <section class="view" id="approval-view" aria-label="Approval dashboard">
+          <header class="view-header">
+            <div>
+              <p class="eyeline">Approval</p>
+              <h1>New opportunities</h1>
+            </div>
+            <button class="secondary" type="button" id="refresh-button">Refresh</button>
+          </header>
+
+          <section class="kpi-grid" aria-label="Approval summary">
+            <article>
+              <span>New opportunities</span>
+              <strong id="kpi-pending">0</strong>
+            </article>
+            <article>
+              <span>In review</span>
+              <strong id="kpi-review">0</strong>
+            </article>
+            <article>
+              <span>Pre-approved</span>
+              <strong id="kpi-pre-approved">0</strong>
+            </article>
+            <article>
+              <span>Needs review</span>
+              <strong id="kpi-needs-review">0</strong>
+            </article>
+          </section>
+
+          <p class="action-status" id="action-status" role="status"></p>
+
+          <article class="table-panel">
+            <div class="table-panel-header">
+              <div>
+                <h2>Approval queue</h2>
+                <p>Select a tag for each incoming opportunity. Accept moves it to Review; Reject ignores it.</p>
+              </div>
+              <input id="approval-filter" type="search" autocomplete="off" placeholder="Filter approval queue">
+            </div>
+            <div class="table-scroll">
+              <table class="opportunity-table">
+                <thead>
+                  <tr>
+                    <th>Customer</th>
+                    <th>Product</th>
+                    <th>Qty</th>
+                    <th>Requested value</th>
+                    <th>Tag</th>
+                    <th>Action</th>
+                  </tr>
+                </thead>
+                <tbody id="approval-table-body"></tbody>
+              </table>
+            </div>
+            <p class="empty-state" id="approval-empty-state">No new opportunities waiting for approval.</p>
+          </article>
+        </section>
+
+        <section class="view" id="review-view" aria-label="Review dashboard">
+          <header class="view-header">
+            <div>
+              <p class="eyeline">Review</p>
+              <h1>Review dashboard</h1>
+            </div>
+          </header>
+
+          <section class="kpi-grid" aria-label="Review summary">
+            <article>
+              <span>Waiting review</span>
+              <strong id="kpi-review-waiting">0</strong>
+            </article>
+            <article>
+              <span>Approved</span>
+              <strong id="kpi-approved">0</strong>
+            </article>
+            <article>
+              <span>Review value</span>
+              <strong id="kpi-review-value">0</strong>
+            </article>
+            <article>
+              <span>Approved value</span>
+              <strong id="kpi-approved-value">0</strong>
+            </article>
+          </section>
+
+          <section class="chart-grid" aria-label="Opportunity charts">
+            <article class="chart-card">
+              <div class="chart-card-header">
+                <h2>Value by customer</h2>
+                <div class="segmented" aria-label="Customer chart mode">
+                  <button class="active" type="button" data-chart="customer" data-mode="bar">Bar</button>
+                  <button type="button" data-chart="customer" data-mode="pie">Pie</button>
+                </div>
+              </div>
+              <div class="chart-visual" id="customer-visual"></div>
+              <div class="chart-breakdown" id="customer-chart-list"></div>
+            </article>
+            <article class="chart-card">
+              <div class="chart-card-header">
+                <h2>Value by product</h2>
+                <div class="segmented" aria-label="Product chart mode">
+                  <button class="active" type="button" data-chart="product" data-mode="bar">Bar</button>
+                  <button type="button" data-chart="product" data-mode="pie">Pie</button>
+                </div>
+              </div>
+              <div class="chart-visual" id="product-visual"></div>
+              <div class="chart-breakdown" id="product-chart-list"></div>
+            </article>
+          </section>
+
+          <section class="approval-layout" aria-label="Review tables">
+            <article class="table-panel">
+              <div class="table-panel-header">
+                <div>
+                  <h2>Review queue</h2>
+                  <p>Final approval sends the opportunity to SAP. Reject ignores it.</p>
+                </div>
+                <input id="review-filter" type="search" autocomplete="off" placeholder="Filter review queue">
+              </div>
+              <div class="table-scroll">
+                <table class="opportunity-table">
+                  <thead>
+                    <tr>
+                      <th>Customer</th>
+                      <th>Product</th>
+                      <th>Qty</th>
+                      <th>Requested value</th>
+                      <th>Tag</th>
+                      <th>Action</th>
+                    </tr>
+                  </thead>
+                  <tbody id="review-table-body"></tbody>
+                </table>
+              </div>
+              <p class="empty-state" id="review-empty-state">No opportunities accepted for review yet.</p>
+            </article>
+
+            <article class="table-panel">
+              <div class="table-panel-header">
+                <div>
+                  <h2>Approved list</h2>
+                  <p>Final approved opportunities are listed here.</p>
+                </div>
+                <input id="approved-filter" type="search" autocomplete="off" placeholder="Filter approved list">
+              </div>
+              <div class="table-scroll">
+                <table class="opportunity-table">
+                  <thead>
+                    <tr>
+                      <th>Customer</th>
+                      <th>Product</th>
+                      <th>Qty</th>
+                      <th>Requested value</th>
+                      <th>Tag</th>
+                      <th>Status</th>
+                    </tr>
+                  </thead>
+                  <tbody id="approved-table-body"></tbody>
+                </table>
+              </div>
+              <p class="empty-state" id="approved-empty-state">No approved opportunities yet.</p>
+            </article>
+          </section>
+        </section>
+
+        <section class="view" id="record-view" aria-label="Record detail">
+          <header class="view-header">
+            <div>
+              <p class="eyeline">Record</p>
+              <h1 id="record-heading">Opportunity detail</h1>
+            </div>
+            <button class="secondary" type="button" id="back-to-dashboard-button">Back</button>
+          </header>
+
+          <section class="record-page">
+            <div class="decision-banner qualified" id="record-banner">
+              <span class="decision-label">Opportunity</span>
+              <strong>Select a record from the dashboard.</strong>
+            </div>
+
+            <div class="record-controls">
+              <label for="record-tag-select">Record tag</label>
+              <select id="record-tag-select">
+                <option value="pre_approved">Pre-approved</option>
+                <option value="needs_review">Needs review</option>
+              </select>
+              <span id="record-tag-status"></span>
+            </div>
+
+            <div class="record-detail-grid">
+              <section class="detail-block">
+                <h2>Customer</h2>
+                <dl id="record-customer-list"></dl>
+              </section>
+              <section class="detail-block">
+                <h2>Request</h2>
+                <dl id="record-po-list"></dl>
+              </section>
+              <section class="detail-block">
+                <h2>Value</h2>
+                <dl id="record-commercial-list"></dl>
+              </section>
+              <section class="detail-block">
+                <h2>Decision factors</h2>
+                <dl id="record-fulfillment-list"></dl>
+              </section>
+            </div>
+
+            <section class="detail-block email-block">
+              <details class="email-details">
+                <summary>Full email text</summary>
+                <div class="email-body" id="record-email-body">No email selected.</div>
+              </details>
+            </section>
+          </section>
+        </section>
+      </section>
+    </main>
+
+    <script src="/app.js" type="module"></script>
+  </body>
+</html>
