@@ -110,14 +110,17 @@ test("hana UAA service key alone is not treated as SQL-write ready", () => {
   assert.ok(readiness.errors.some((error) => error.includes("JWT user mapping")));
 });
 
-test("serverless deployments disable WhatsApp browser sessions", () => {
+test("serverless deployments use WhatsApp Cloud API instead of browser sessions", () => {
   const config = getConfig({
     NETLIFY: "true",
     WHATSAPP_ENABLED: "true"
   });
 
-  assert.equal(config.whatsappEnabled, false);
-  assert.match(config.whatsappDisabledReason, /serverless deployments/i);
+  assert.equal(config.whatsappEnabled, true);
+  assert.equal(config.whatsappConnector, "cloud-api");
+  assert.equal(config.whatsappCloudEnabled, true);
+  assert.equal(config.whatsappWebEnabled, false);
+  assert.equal(config.whatsappQrDisabledReason, "");
 });
 
 test("explicit local WhatsApp enable remains available outside serverless", () => {
@@ -126,5 +129,20 @@ test("explicit local WhatsApp enable remains available outside serverless", () =
   });
 
   assert.equal(config.whatsappEnabled, true);
+  assert.equal(config.whatsappConnector, "web");
+  assert.equal(config.whatsappWebEnabled, true);
   assert.equal(config.whatsappDisabledReason, "");
+});
+
+test("explicit QR mode remains blocked in serverless unless allowed", () => {
+  const config = getConfig({
+    NETLIFY: "true",
+    WHATSAPP_ENABLED: "true",
+    WHATSAPP_CONNECTOR: "web"
+  });
+
+  assert.equal(config.whatsappEnabled, true);
+  assert.equal(config.whatsappConnector, "web");
+  assert.equal(config.whatsappWebEnabled, false);
+  assert.match(config.whatsappQrDisabledReason, /serverless deployments/i);
 });

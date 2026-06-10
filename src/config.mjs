@@ -9,11 +9,18 @@ export function getConfig(env = process.env) {
   const hanaAuthMode = normalizeHanaAuthMode(
     env.HANA_AUTH_MODE || (hanaUaa.clientid || hanaUaa.clientId ? "uaa-jwt" : "password")
   );
-  const disableWhatsAppForServerless =
-    isServerlessRuntime(env) && env.WHATSAPP_ALLOW_SERVERLESS !== "true";
+  const serverlessRuntime = isServerlessRuntime(env);
+  const whatsappConnector = normalizeWhatsAppConnector(env.WHATSAPP_CONNECTOR, env, serverlessRuntime);
+  const whatsappEnabled = env.WHATSAPP_ENABLED !== "false";
+  const disableWhatsAppWebForServerless =
+    whatsappConnector === "web" && serverlessRuntime && env.WHATSAPP_ALLOW_SERVERLESS !== "true";
+  const whatsappCloudVerifyToken = env.WHATSAPP_CLOUD_VERIFY_TOKEN || env.WHATSAPP_VERIFY_TOKEN || "";
+  const whatsappCloudAccessToken = env.WHATSAPP_CLOUD_ACCESS_TOKEN || "";
+  const whatsappCloudPhoneNumberId = env.WHATSAPP_CLOUD_PHONE_NUMBER_ID || "";
 
   return {
     port: Number(env.PORT || 4000),
+    publicBaseUrl: getPublicBaseUrl(env),
     aiProvider: env.AI_PROVIDER || "heuristic",
     openaiApiKey: env.OPENAI_API_KEY || "",
     openaiModel: env.OPENAI_MODEL || "gpt-5-mini",
@@ -31,13 +38,22 @@ export function getConfig(env = process.env) {
     gmailSyncMaxResults: Number(env.GMAIL_SYNC_MAX_RESULTS || 10),
     gmailAutoSyncEnabled: env.GMAIL_AUTO_SYNC !== "false",
     gmailAutoSyncIntervalMs: Number(env.GMAIL_AUTO_SYNC_INTERVAL_MS || 60000),
-    whatsappEnabled: env.WHATSAPP_ENABLED !== "false" && !disableWhatsAppForServerless,
-    whatsappDisabledReason: disableWhatsAppForServerless
+    whatsappEnabled,
+    whatsappConnector,
+    whatsappWebEnabled: whatsappEnabled && whatsappConnector === "web" && !disableWhatsAppWebForServerless,
+    whatsappCloudEnabled: whatsappEnabled && whatsappConnector === "cloud-api",
+    whatsappDisabledReason: !whatsappEnabled ? "WhatsApp intake is disabled by WHATSAPP_ENABLED=false." : "",
+    whatsappQrDisabledReason: disableWhatsAppWebForServerless
       ? "WhatsApp QR login is disabled on serverless deployments. Run locally or on a persistent Node host to scan WhatsApp."
       : "",
     whatsappSessionPath: env.WHATSAPP_SESSION_PATH || resolve("data", "whatsapp-session"),
     whatsappChromePath: env.WHATSAPP_CHROME_PATH || "",
     whatsappHeadless: env.WHATSAPP_HEADLESS !== "false",
+    whatsappCloudWebhookPath: env.WHATSAPP_CLOUD_WEBHOOK_PATH || "/whatsapp/webhook",
+    whatsappCloudVerifyToken,
+    whatsappCloudAccessToken,
+    whatsappCloudPhoneNumberId,
+    whatsappCloudAppSecret: env.WHATSAPP_CLOUD_APP_SECRET || "",
     whatsappChatLimit: Number(env.WHATSAPP_CHAT_LIMIT || 30),
     whatsappLookbackLimit: Number(env.WHATSAPP_LOOKBACK_LIMIT || 50),
     whatsappProcessLimit: Number(env.WHATSAPP_PROCESS_LIMIT || 20),
@@ -114,11 +130,28 @@ export function getRuntimeStatus(config) {
     },
     whatsapp: {
       enabled: config.whatsappEnabled,
+      connector: config.whatsappConnector,
       disabledReason: config.whatsappDisabledReason,
+      qrDisabledReason: config.whatsappQrDisabledReason,
       searchTerms: config.whatsappSearchTerms,
       chatLimit: config.whatsappChatLimit,
       lookbackLimit: config.whatsappLookbackLimit,
       processLimit: config.whatsappProcessLimit,
+      qrLogin: {
+        enabled: config.whatsappWebEnabled,
+        browserConfigured: Boolean(config.whatsappChromePath),
+        headless: config.whatsappHeadless
+      },
+      cloudApi: {
+        enabled: config.whatsappCloudEnabled,
+        webhookPath: config.whatsappCloudWebhookPath,
+        webhookUrl: joinPublicUrl(config.publicBaseUrl, config.whatsappCloudWebhookPath),
+        verifyTokenConfigured: Boolean(config.whatsappCloudVerifyToken),
+        accessTokenConfigured: Boolean(config.whatsappCloudAccessToken),
+        phoneNumberIdConfigured: Boolean(config.whatsappCloudPhoneNumberId),
+        appSecretConfigured: Boolean(config.whatsappCloudAppSecret),
+        configured: Boolean(config.whatsappCloudVerifyToken)
+      },
       browserConfigured: Boolean(config.whatsappChromePath),
       headless: config.whatsappHeadless
     },
@@ -332,6 +365,50 @@ function parseList(value) {
 
 function isServerlessRuntime(env) {
   return Boolean(env.NETLIFY || env.VERCEL || env.AWS_LAMBDA_FUNCTION_NAME);
+}
+
+function normalizeWhatsAppConnector(value, env, serverlessRuntime) {
+  const connector = String(value || "").trim().toLowerCase();
+  if (["cloud", "cloud-api", "business", "business-cloud", "meta", "meta-cloud"].includes(connector)) {
+    return "cloud-api";
+  }
+  if (["web", "qr", "whatsapp-web", "whatsapp-web.js"].includes(connector)) {
+    return "web";
+  }
+  if (connector && connector !== "auto") {
+    return connector;
+  }
+  if (
+    env.WHATSAPP_CLOUD_VERIFY_TOKEN ||
+    env.WHATSAPP_VERIFY_TOKEN ||
+    env.WHATSAPP_CLOUD_ACCESS_TOKEN ||
+    env.WHATSAPP_CLOUD_PHONE_NUMBER_ID
+  ) {
+    return "cloud-api";
+  }
+  return serverlessRuntime ? "cloud-api" : "web";
+}
+
+function getPublicBaseUrl(env) {
+  const explicit = env.PUBLIC_BASE_URL || env.APP_BASE_URL || env.SITE_URL;
+  if (explicit) {
+    return explicit;
+  }
+  if (env.VERCEL_URL) {
+    return `https://${env.VERCEL_URL}`;
+  }
+  return env.URL || env.DEPLOY_URL || "";
+}
+
+function joinPublicUrl(baseUrl, pathname) {
+  if (!baseUrl) {
+    return pathname;
+  }
+  try {
+    return new URL(pathname, baseUrl.endsWith("/") ? baseUrl : `${baseUrl}/`).toString();
+  } catch {
+    return pathname;
+  }
 }
 
 function hasSapDestinationBinding(env) {

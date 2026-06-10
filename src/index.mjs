@@ -28,8 +28,10 @@ import { listOpportunities, saveOpportunityRecord, saveOpportunitySnapshot } fro
 import {
   disconnectWhatsAppClient,
   getWhatsAppStatus,
+  processWhatsAppCloudWebhook,
   startWhatsAppClient,
-  syncWhatsAppSalesOrderMessages
+  syncWhatsAppSalesOrderMessages,
+  verifyWhatsAppCloudWebhook
 } from "./whatsapp/whatsappClient.mjs";
 
 const config = getConfig();
@@ -55,6 +57,21 @@ async function handleRequest(request, response) {
 
     if (request.method === "GET" && url.pathname === "/whatsapp/status") {
       return sendJson(response, 200, getWhatsAppStatus(config));
+    }
+
+    if (request.method === "GET" && url.pathname === config.whatsappCloudWebhookPath) {
+      const result = verifyWhatsAppCloudWebhook(config, url);
+      return sendText(response, result.statusCode, result.body, result.contentType);
+    }
+
+    if (request.method === "POST" && url.pathname === config.whatsappCloudWebhookPath) {
+      const rawBody = await readTextBody(request);
+      const payload = rawBody ? JSON.parse(rawBody) : {};
+      const result = await processWhatsAppCloudWebhook(config, payload, {
+        rawBody,
+        signature: getHeader(request, "x-hub-signature-256")
+      });
+      return sendJson(response, 200, result);
     }
 
     if (request.method === "POST" && url.pathname === "/whatsapp/start") {
@@ -462,12 +479,31 @@ function sendJson(response, statusCode, body) {
   response.end(JSON.stringify(body, null, 2));
 }
 
+function sendText(response, statusCode, body, contentType = "text/plain; charset=utf-8") {
+  response.writeHead(statusCode, {
+    "Content-Type": contentType
+  });
+  response.end(String(body || ""));
+}
+
 async function readJsonBody(request) {
+  const body = await readTextBody(request);
+  return body ? JSON.parse(body) : {};
+}
+
+async function readTextBody(request) {
   let body = "";
   for await (const chunk of request) {
     body += chunk;
   }
-  return body ? JSON.parse(body) : {};
+  return body;
+}
+
+function getHeader(request, name) {
+  if (typeof request.headers?.get === "function") {
+    return request.headers.get(name);
+  }
+  return request.headers?.[name.toLowerCase()] || request.headers?.[name] || "";
 }
 
 async function tryServeStatic(pathname, response) {

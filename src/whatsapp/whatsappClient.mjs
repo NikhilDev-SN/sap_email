@@ -1,4 +1,4 @@
-import { createHash } from "node:crypto";
+import { createHash, createHmac, timingSafeEqual } from "node:crypto";
 import { existsSync } from "node:fs";
 import { mkdir } from "node:fs/promises";
 import { prepareApprovalRecord } from "../domain/approvalWorkflow.mjs";
@@ -43,23 +43,89 @@ const syncState = {
   lastMatches: []
 };
 
+const cloudState = {
+  lastWebhookAt: null,
+  lastVerificationAt: null,
+  lastError: null,
+  lastReceived: 0,
+  lastMatched: 0,
+  lastProcessed: 0,
+  lastIgnored: 0,
+  lastReadyForApproval: 0,
+  lastMatches: []
+};
+
 export function getWhatsAppStatus(config) {
   const enabled = Boolean(config.whatsappEnabled);
+  const connector = config.whatsappConnector || "web";
+  const webEnabled = Boolean(config.whatsappWebEnabled);
+  const cloudEnabled = Boolean(config.whatsappCloudEnabled);
+  const cloudReady = cloudEnabled && Boolean(config.whatsappCloudVerifyToken);
   const disabledReason = getDisabledReason(config);
+  const qrDisabledReason = getQrDisabledReason(config);
+  const cloudSetupMessage =
+    "WhatsApp Cloud API needs WHATSAPP_CLOUD_VERIFY_TOKEN in your Vercel/Netlify environment, then set the Meta callback URL to /whatsapp/webhook.";
+  const cloudSyncState = {
+    running: false,
+    lastStartedAt: null,
+    lastFinishedAt: cloudState.lastWebhookAt,
+    lastError: cloudState.lastError,
+    lastScannedChats: cloudState.lastReceived ? 1 : 0,
+    lastScannedMessages: cloudState.lastReceived,
+    lastMatched: cloudState.lastMatched,
+    lastProcessed: cloudState.lastProcessed,
+    lastReadyForApproval: cloudState.lastReadyForApproval,
+    lastMatches: cloudState.lastMatches
+  };
 
   return {
     enabled,
-    status: enabled ? clientState.status : "disabled",
-    starting: enabled ? clientState.starting : false,
-    authenticated: enabled ? clientState.authenticated : false,
-    ready: enabled ? clientState.ready : false,
-    hasQr: enabled ? Boolean(clientState.qrDataUrl) : false,
-    qrDataUrl: enabled ? clientState.qrDataUrl : null,
-    loading: enabled ? clientState.loading : null,
-    lastQrAt: clientState.lastQrAt,
-    lastReadyAt: clientState.lastReadyAt,
-    lastDisconnectedAt: clientState.lastDisconnectedAt,
-    lastError: enabled ? clientState.lastError : disabledReason,
+    connector,
+    status: getConnectionStatus({
+      enabled,
+      connector,
+      webEnabled,
+      cloudEnabled,
+      cloudReady
+    }),
+    starting: webEnabled ? clientState.starting : false,
+    authenticated: cloudEnabled ? cloudReady : webEnabled ? clientState.authenticated : false,
+    ready: cloudEnabled ? cloudReady : webEnabled ? clientState.ready : false,
+    hasQr: webEnabled ? Boolean(clientState.qrDataUrl) : false,
+    qrDataUrl: webEnabled ? clientState.qrDataUrl : null,
+    loading: webEnabled ? clientState.loading : null,
+    lastQrAt: webEnabled ? clientState.lastQrAt : null,
+    lastReadyAt: cloudEnabled ? cloudState.lastVerificationAt : clientState.lastReadyAt,
+    lastDisconnectedAt: webEnabled ? clientState.lastDisconnectedAt : null,
+    lastError: getConnectionError({
+      enabled,
+      connector,
+      webEnabled,
+      cloudEnabled,
+      cloudReady,
+      disabledReason,
+      qrDisabledReason,
+      cloudSetupMessage
+    }),
+    web: {
+      enabled: webEnabled,
+      disabledReason: webEnabled ? "" : qrDisabledReason,
+      browserConfigured: Boolean(config.whatsappChromePath),
+      headless: config.whatsappHeadless
+    },
+    cloudApi: {
+      enabled: cloudEnabled,
+      configured: cloudReady,
+      webhookPath: config.whatsappCloudWebhookPath,
+      webhookUrl: buildWebhookUrl(config),
+      verifyTokenConfigured: Boolean(config.whatsappCloudVerifyToken),
+      accessTokenConfigured: Boolean(config.whatsappCloudAccessToken),
+      phoneNumberIdConfigured: Boolean(config.whatsappCloudPhoneNumberId),
+      appSecretConfigured: Boolean(config.whatsappCloudAppSecret),
+      lastWebhookAt: cloudState.lastWebhookAt,
+      lastVerificationAt: cloudState.lastVerificationAt,
+      lastIgnored: cloudState.lastIgnored
+    },
     search: {
       terms: config.whatsappSearchTerms,
       chatLimit: config.whatsappChatLimit,
@@ -67,15 +133,17 @@ export function getWhatsAppStatus(config) {
       processLimit: config.whatsappProcessLimit
     },
     sync: {
-      ...syncState
+      ...(cloudEnabled ? cloudSyncState : syncState)
     }
   };
 }
 
 export async function startWhatsAppClient(config) {
-  if (!config.whatsappEnabled) {
+  if (!config.whatsappWebEnabled) {
     clientState.status = "disabled";
-    clientState.lastError = getDisabledReason(config);
+    clientState.lastError = config.whatsappCloudEnabled
+      ? "WhatsApp Cloud API does not use QR login. Configure the Meta webhook URL instead."
+      : getQrDisabledReason(config) || getDisabledReason(config);
     return getWhatsAppStatus(config);
   }
 
@@ -137,6 +205,14 @@ export async function disconnectWhatsAppClient(config) {
 }
 
 export async function syncWhatsAppSalesOrderMessages(config) {
+  if (config.whatsappCloudEnabled) {
+    return {
+      ...getWhatsAppStatus(config),
+      skipped: true,
+      message: "WhatsApp Cloud API receives messages by webhook. No chat scan is required."
+    };
+  }
+
   if (syncState.running) {
     return {
       ...getWhatsAppStatus(config),
@@ -221,6 +297,126 @@ export async function syncWhatsAppSalesOrderMessages(config) {
   } finally {
     syncState.running = false;
   }
+}
+
+export function verifyWhatsAppCloudWebhook(config, url) {
+  const mode = url.searchParams.get("hub.mode");
+  const token = url.searchParams.get("hub.verify_token");
+  const challenge = url.searchParams.get("hub.challenge") || "";
+
+  if (!config.whatsappCloudEnabled) {
+    return {
+      statusCode: 403,
+      contentType: "text/plain; charset=utf-8",
+      body: "WhatsApp Cloud API is disabled."
+    };
+  }
+
+  if (!config.whatsappCloudVerifyToken) {
+    return {
+      statusCode: 428,
+      contentType: "text/plain; charset=utf-8",
+      body: "Set WHATSAPP_CLOUD_VERIFY_TOKEN before verifying the webhook."
+    };
+  }
+
+  if (mode === "subscribe" && token === config.whatsappCloudVerifyToken) {
+    cloudState.lastVerificationAt = new Date().toISOString();
+    cloudState.lastError = null;
+    return {
+      statusCode: 200,
+      contentType: "text/plain; charset=utf-8",
+      body: challenge
+    };
+  }
+
+  cloudState.lastError = "WhatsApp Cloud API webhook verification token did not match.";
+  return {
+    statusCode: 403,
+    contentType: "text/plain; charset=utf-8",
+    body: "Verification failed."
+  };
+}
+
+export async function processWhatsAppCloudWebhook(config, payload, options = {}) {
+  if (!config.whatsappCloudEnabled) {
+    return {
+      ok: true,
+      connector: config.whatsappConnector || "web",
+      skipped: true,
+      message: "WhatsApp Cloud API is disabled.",
+      received: 0,
+      matched: 0,
+      processed: 0,
+      ignored: 0,
+      opportunities: [],
+      matches: []
+    };
+  }
+
+  if (config.whatsappCloudAppSecret && !isValidCloudSignature(config, options.rawBody || "", options.signature || "")) {
+    cloudState.lastError = "WhatsApp Cloud API webhook signature check failed.";
+    throw new Error(cloudState.lastError);
+  }
+
+  const candidates = extractCloudApiMessages(payload);
+  const records = [];
+  const matches = [];
+  let matched = 0;
+  let ignored = 0;
+  let readyForApproval = 0;
+
+  for (const candidate of candidates) {
+    const text = extractCloudMessageText(candidate.message);
+    if (!text) {
+      ignored += 1;
+      continue;
+    }
+
+    const match = isRelevantWhatsAppSalesOrderText(text, config.whatsappSearchTerms);
+    if (!match.matched) {
+      ignored += 1;
+      continue;
+    }
+
+    matched += 1;
+    const inquiry = buildWhatsAppCloudInquiry(candidate);
+    const result = await processInquiry(inquiry, config);
+    const record = await saveOpportunityRecord(result, {
+      backend: config.opportunityStoreBackend
+    });
+    const finalRecord = await saveOpportunitySnapshot(prepareApprovalRecord(record), {
+      backend: config.opportunityStoreBackend
+    });
+
+    if (finalRecord.approval?.status === "pending") {
+      readyForApproval += 1;
+    }
+
+    records.push(finalRecord);
+    matches.push(summarizeCloudMatch(candidate, match, finalRecord));
+  }
+
+  cloudState.lastWebhookAt = new Date().toISOString();
+  cloudState.lastError = null;
+  cloudState.lastReceived = candidates.length;
+  cloudState.lastMatched = matched;
+  cloudState.lastProcessed = records.length;
+  cloudState.lastIgnored = ignored;
+  cloudState.lastReadyForApproval = readyForApproval;
+  cloudState.lastMatches = matches;
+
+  return {
+    ok: true,
+    connector: "cloud-api",
+    received: candidates.length,
+    matched,
+    processed: records.length,
+    ignored,
+    readyForApproval,
+    opportunities: records,
+    matches
+  };
 }
 
 export function isRelevantWhatsAppSalesOrderText(text, configuredTerms = []) {
@@ -382,6 +578,28 @@ export function buildWhatsAppInquiry(message, chat) {
   };
 }
 
+export function buildWhatsAppCloudInquiry(candidate) {
+  const message = candidate.message || {};
+  const text = extractCloudMessageText(message);
+  const sender = message.from || candidate.contact?.wa_id || "whatsapp:unknown";
+  const contactName = candidate.contact?.profile?.name || "";
+  const phoneNumber = candidate.metadata?.display_phone_number || candidate.metadata?.phone_number_id || "";
+  const receivedAt = message.timestamp ? new Date(Number(message.timestamp) * 1000).toISOString() : new Date().toISOString();
+
+  return {
+    provider: "whatsapp-cloud",
+    source: "whatsapp",
+    messageId: `whatsapp-cloud:${message.id || hashText(JSON.stringify(message))}`,
+    threadId: `whatsapp:${sender}`,
+    from: contactName ? `${contactName} <${sender}>` : sender,
+    subject: "WhatsApp mining sales order inquiry",
+    body: [`WhatsApp contact: ${contactName || "Unknown contact"}`, `Sender: ${sender}`, `Business phone: ${phoneNumber || "-"}`, "", text].join(
+      "\n"
+    ),
+    receivedAt
+  };
+}
+
 function summarizeMatch(candidate, record) {
   const inquiry = buildWhatsAppInquiry(candidate.message, candidate.chat);
   return {
@@ -397,6 +615,72 @@ function summarizeMatch(candidate, record) {
     product: record?.opportunity?.request?.product || null,
     customer: record?.opportunity?.customer?.name || record?.customer?.name || null
   };
+}
+
+function summarizeCloudMatch(candidate, match, record) {
+  const inquiry = buildWhatsAppCloudInquiry(candidate);
+  return {
+    recordId: record?.id || null,
+    messageId: inquiry.messageId,
+    chatName: candidate.contact?.profile?.name || candidate.message?.from || "WhatsApp contact",
+    from: inquiry.from,
+    receivedAt: inquiry.receivedAt,
+    matchedTerms: match.matchedTerms,
+    reasons: match.reasons,
+    preview: preview(extractCloudMessageText(candidate.message)),
+    opportunityName: record?.opportunity?.name || null,
+    product: record?.opportunity?.request?.product || null,
+    customer: record?.opportunity?.customer?.name || record?.customer?.name || null
+  };
+}
+
+function extractCloudApiMessages(payload) {
+  const candidates = [];
+  const entries = Array.isArray(payload?.entry) ? payload.entry : [];
+
+  for (const entry of entries) {
+    const changes = Array.isArray(entry?.changes) ? entry.changes : [];
+    for (const change of changes) {
+      const value = change?.value || {};
+      const contacts = new Map(
+        (Array.isArray(value.contacts) ? value.contacts : []).map((contact) => [contact.wa_id, contact])
+      );
+      for (const message of Array.isArray(value.messages) ? value.messages : []) {
+        candidates.push({
+          message,
+          contact: contacts.get(message.from) || null,
+          metadata: value.metadata || {}
+        });
+      }
+    }
+  }
+
+  return candidates;
+}
+
+function extractCloudMessageText(message = {}) {
+  if (message.text?.body) {
+    return String(message.text.body).trim();
+  }
+  if (message.button?.text) {
+    return String(message.button.text).trim();
+  }
+  if (message.interactive?.button_reply) {
+    return [message.interactive.button_reply.title, message.interactive.button_reply.id].filter(Boolean).join(" ").trim();
+  }
+  if (message.interactive?.list_reply) {
+    return [message.interactive.list_reply.title, message.interactive.list_reply.description, message.interactive.list_reply.id]
+      .filter(Boolean)
+      .join(" ")
+      .trim();
+  }
+  if (message.document?.caption) {
+    return String(message.document.caption).trim();
+  }
+  if (message.image?.caption) {
+    return String(message.image.caption).trim();
+  }
+  return "";
 }
 
 function getMessageId(message) {
@@ -437,6 +721,64 @@ function hashText(value) {
   return createHash("sha256").update(String(value || "")).digest("hex").slice(0, 16);
 }
 
+function getConnectionStatus({ enabled, connector, webEnabled, cloudEnabled, cloudReady }) {
+  if (!enabled) {
+    return "disabled";
+  }
+  if (connector === "cloud-api" || cloudEnabled) {
+    return cloudReady ? "webhook_ready" : "cloud_setup_required";
+  }
+  if (!webEnabled) {
+    return "disabled";
+  }
+  return clientState.status;
+}
+
+function getConnectionError({
+  enabled,
+  connector,
+  webEnabled,
+  cloudEnabled,
+  cloudReady,
+  disabledReason,
+  qrDisabledReason,
+  cloudSetupMessage
+}) {
+  if (!enabled) {
+    return disabledReason;
+  }
+  if (connector === "cloud-api" || cloudEnabled) {
+    return cloudState.lastError || (cloudReady ? null : cloudSetupMessage);
+  }
+  if (!webEnabled) {
+    return qrDisabledReason;
+  }
+  return clientState.lastError;
+}
+
+function buildWebhookUrl(config) {
+  const pathname = config.whatsappCloudWebhookPath || "/whatsapp/webhook";
+  if (!config.publicBaseUrl) {
+    return pathname;
+  }
+  try {
+    return new URL(pathname, config.publicBaseUrl.endsWith("/") ? config.publicBaseUrl : `${config.publicBaseUrl}/`).toString();
+  } catch {
+    return pathname;
+  }
+}
+
+function isValidCloudSignature(config, rawBody, signatureHeader) {
+  if (!signatureHeader || !signatureHeader.startsWith("sha256=")) {
+    return false;
+  }
+
+  const expected = `sha256=${createHmac("sha256", config.whatsappCloudAppSecret).update(String(rawBody)).digest("hex")}`;
+  const actualBuffer = Buffer.from(signatureHeader);
+  const expectedBuffer = Buffer.from(expected);
+  return actualBuffer.length === expectedBuffer.length && timingSafeEqual(actualBuffer, expectedBuffer);
+}
+
 function cleanErrorMessage(value) {
   return String(value?.message || value || "Unknown error")
     .replace(/pwd=([^,}\s]+)/gi, "pwd=[redacted]")
@@ -446,5 +788,9 @@ function cleanErrorMessage(value) {
 }
 
 function getDisabledReason(config) {
-  return config.whatsappDisabledReason || "WhatsApp dashboard is disabled by WHATSAPP_ENABLED=false.";
+  return config.whatsappDisabledReason || "WhatsApp intake is disabled by WHATSAPP_ENABLED=false.";
+}
+
+function getQrDisabledReason(config) {
+  return config.whatsappQrDisabledReason || "";
 }

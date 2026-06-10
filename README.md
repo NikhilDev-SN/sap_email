@@ -34,7 +34,31 @@ curl -X POST http://localhost:4000/inquiries/process \
 
 ## WhatsApp Dashboard
 
-The dashboard includes a WhatsApp tab for QR login and scanning recent chats for mining sales order messages. Start the app, open the dashboard, choose `WhatsApp`, click `Start QR login`, scan the QR code with WhatsApp, then click `Scan messages`.
+The dashboard includes a WhatsApp tab for mining sales order messages. It supports two connector modes:
+
+- `WHATSAPP_CONNECTOR=cloud-api` for Vercel/Netlify/serverless production using the official WhatsApp Business Cloud API webhook.
+- `WHATSAPP_CONNECTOR=web` for local QR login with `whatsapp-web.js`.
+
+On Vercel and Netlify the app defaults to Cloud API mode, because QR login needs a long-running browser process and does not fit serverless functions. Configure these deployment environment variables:
+
+```bash
+WHATSAPP_ENABLED=true
+WHATSAPP_CONNECTOR=cloud-api
+WHATSAPP_CLOUD_VERIFY_TOKEN=choose-a-long-random-token
+PUBLIC_BASE_URL=https://your-deployed-site.example
+```
+
+Then in the Meta WhatsApp app webhook settings, use:
+
+```text
+Callback URL: https://your-deployed-site.example/whatsapp/webhook
+Verify token: the same WHATSAPP_CLOUD_VERIFY_TOKEN value
+Webhook field: messages
+```
+
+Incoming Cloud API text, button, list, document-caption, and image-caption messages are checked for mining sales order intent and processed through the same opportunity pipeline as Gmail.
+
+For local QR login, start the app, open the dashboard, choose `WhatsApp`, click `Start QR login`, scan the QR code with WhatsApp, then click `Scan messages`.
 
 Matching messages are processed through the same inquiry pipeline as Gmail and land in the approval queue. The default search catches `mining sales order`, the typo `minning sales order`, and common ore/coal sales order phrases. Tune it with:
 

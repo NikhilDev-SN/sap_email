@@ -15,6 +15,9 @@ process.env.HANA_PASSWORD = "";
 process.env.HANA_UAA_URL = "";
 process.env.HANA_CLIENT_ID = "";
 process.env.HANA_CLIENT_SECRET = "";
+process.env.WHATSAPP_ENABLED = "true";
+process.env.WHATSAPP_CONNECTOR = "cloud-api";
+process.env.WHATSAPP_CLOUD_VERIFY_TOKEN = "server-test-token";
 const { server } = await import("../src/index.mjs");
 
 test("serves the inquiry UI", async () => {
@@ -53,15 +56,29 @@ test("serves WhatsApp dashboard status without starting a session", async () => 
   try {
     const response = await fetch(`${baseUrl}/whatsapp/status`);
     const result = await response.json();
-    const serverlessRuntime = Boolean(process.env.NETLIFY || process.env.VERCEL || process.env.AWS_LAMBDA_FUNCTION_NAME);
-    const expectedEnabled =
-      process.env.WHATSAPP_ENABLED !== "false" && !(serverlessRuntime && process.env.WHATSAPP_ALLOW_SERVERLESS !== "true");
 
     assert.equal(response.status, 200);
-    assert.equal(result.enabled, expectedEnabled);
-    assert.equal(result.ready, false);
-    assert.equal(result.status, expectedEnabled ? "idle" : "disabled");
+    assert.equal(result.enabled, true);
+    assert.equal(result.connector, "cloud-api");
+    assert.equal(result.ready, true);
+    assert.equal(result.status, "webhook_ready");
+    assert.equal(result.cloudApi.configured, true);
     assert.ok(result.search.terms.includes("minning sales order"));
+  } finally {
+    await close();
+  }
+});
+
+test("verifies WhatsApp Cloud API webhook challenge", async () => {
+  const baseUrl = await listen();
+  try {
+    const response = await fetch(
+      `${baseUrl}/whatsapp/webhook?hub.mode=subscribe&hub.verify_token=server-test-token&hub.challenge=challenge-123`
+    );
+    const result = await response.text();
+
+    assert.equal(response.status, 200);
+    assert.equal(result, "challenge-123");
   } finally {
     await close();
   }

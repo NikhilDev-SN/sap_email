@@ -252,6 +252,14 @@ async function loadWhatsAppStatus() {
 }
 
 async function startWhatsAppLogin() {
+  if (whatsappStatus?.connector === "cloud-api") {
+    await loadWhatsAppStatus();
+    whatsappActionStatus.textContent = whatsappStatus?.cloudApi?.configured
+      ? "WhatsApp Cloud API webhook is ready. Incoming messages are processed automatically."
+      : "Set WHATSAPP_CLOUD_VERIFY_TOKEN in the deployment, then verify the webhook in Meta.";
+    return;
+  }
+
   await runWhatsAppAction({
     button: whatsappStartButton,
     busyLabel: "Starting",
@@ -261,7 +269,7 @@ async function startWhatsAppLogin() {
       }),
     success: (status) =>
       !status.enabled
-        ? "WhatsApp QR login is disabled in this deployment."
+        ? status.lastError || "WhatsApp is disabled in this deployment."
         : status.ready
         ? "WhatsApp is connected."
         : status.hasQr
@@ -272,6 +280,11 @@ async function startWhatsAppLogin() {
 }
 
 async function scanWhatsAppMessages() {
+  if (whatsappStatus?.connector === "cloud-api") {
+    whatsappActionStatus.textContent = "WhatsApp Cloud API receives new messages by webhook, so manual scanning is not needed.";
+    return;
+  }
+
   await runWhatsAppAction({
     button: whatsappScanButton,
     busyLabel: "Scanning",
@@ -324,12 +337,15 @@ function updateWhatsAppStatus(status) {
   whatsappStatus = status;
   const sync = status.sync || {};
   const statusLabel = formatWhatsAppConnection(status);
+  const cloudMode = status.connector === "cloud-api";
 
   whatsappStatusText.textContent = `WhatsApp: ${statusLabel}`;
   whatsappLoginStatus.textContent = formatWhatsAppLoginStatus(status);
   whatsappScanStatus.textContent = formatWhatsAppScanStatus(status);
-  whatsappScanButton.disabled = !status.ready || sync.running;
+  whatsappScanButton.disabled = cloudMode || !status.ready || sync.running;
   whatsappStartButton.disabled = !status.enabled || status.starting;
+  whatsappStartButton.textContent = cloudMode ? "Webhook mode" : "Start QR login";
+  whatsappScanButton.textContent = cloudMode ? "Webhook intake" : "Scan messages";
 
   kpis.whatsappConnection.textContent = statusLabel;
   kpis.whatsappScanned.textContent = String(sync.lastScannedMessages || 0);
@@ -344,15 +360,24 @@ function updateWhatsAppStatus(status) {
     whatsappQrImage.removeAttribute("src");
     whatsappQrImage.hidden = true;
     whatsappQrPlaceholder.hidden = false;
-    whatsappQrPlaceholder.textContent = status.ready ? "Connected" : "No QR code yet";
+    whatsappQrPlaceholder.textContent = getWhatsAppPlaceholder(status);
   }
 
-  renderDefinitionList(whatsappMetaList, [
-    ["Search", (status.search?.terms || []).join(", ") || "-"],
-    ["Chat limit", status.search?.chatLimit || "-"],
-    ["Messages per chat", status.search?.lookbackLimit || "-"],
-    ["Last ready", formatDateTime(status.lastReadyAt)]
-  ]);
+  const metadataRows = cloudMode
+    ? [
+        ["Connector", "Cloud API webhook"],
+        ["Webhook", status.cloudApi?.webhookUrl || status.cloudApi?.webhookPath || "-"],
+        ["Verify token", status.cloudApi?.verifyTokenConfigured ? "Configured" : "Missing"],
+        ["Last webhook", formatDateTime(status.cloudApi?.lastWebhookAt)]
+      ]
+    : [
+        ["Connector", "QR login"],
+        ["Search", (status.search?.terms || []).join(", ") || "-"],
+        ["Chat limit", status.search?.chatLimit || "-"],
+        ["Messages per chat", status.search?.lookbackLimit || "-"],
+        ["Last ready", formatDateTime(status.lastReadyAt)]
+      ];
+  renderDefinitionList(whatsappMetaList, metadataRows);
   renderWhatsAppMatches();
 }
 
@@ -1148,6 +1173,12 @@ function formatSyncStatus(sync) {
 
 function formatWhatsAppConnection(status) {
   const value = String(status?.status || "idle").toLowerCase();
+  if (value === "webhook_ready") {
+    return "Webhook ready";
+  }
+  if (value === "cloud_setup_required") {
+    return "Setup needed";
+  }
   if (status?.ready) {
     return "Connected";
   }
@@ -1177,7 +1208,13 @@ function formatWhatsAppConnection(status) {
 
 function formatWhatsAppLoginStatus(status) {
   if (status && !status.enabled) {
-    return "WhatsApp QR login is disabled on this serverless deployment. Run locally or on a persistent Node host to scan WhatsApp.";
+    return status.lastError || "WhatsApp is disabled.";
+  }
+  if (status?.connector === "cloud-api") {
+    if (status.cloudApi?.configured) {
+      return `Cloud API webhook ready: ${status.cloudApi.webhookUrl || status.cloudApi.webhookPath}.`;
+    }
+    return status.lastError || `Set WHATSAPP_CLOUD_VERIFY_TOKEN and use ${status.cloudApi?.webhookUrl || "/whatsapp/webhook"} as the Meta callback URL.`;
   }
   if (status?.lastError) {
     return status.lastError;
@@ -1199,7 +1236,17 @@ function formatWhatsAppLoginStatus(status) {
 
 function formatWhatsAppScanStatus(status) {
   if (status && !status.enabled) {
-    return "WhatsApp scanning is unavailable while WHATSAPP_ENABLED=false.";
+    return status.lastError || "WhatsApp scanning is unavailable while WHATSAPP_ENABLED=false.";
+  }
+  if (status?.connector === "cloud-api") {
+    const sync = status?.sync || {};
+    if (!status.cloudApi?.configured) {
+      return "Webhook setup is waiting for the verify token.";
+    }
+    if (sync.lastFinishedAt) {
+      return `${sync.lastMatched || 0} matched from ${sync.lastScannedMessages || 0} incoming messages.`;
+    }
+    return "Incoming WhatsApp messages are processed automatically by webhook.";
   }
   const sync = status?.sync || {};
   if (sync.running) {
@@ -1212,6 +1259,13 @@ function formatWhatsAppScanStatus(status) {
     return `${sync.lastMatched || 0} matched from ${sync.lastScannedMessages || 0} messages.`;
   }
   return "No WhatsApp scan has run yet.";
+}
+
+function getWhatsAppPlaceholder(status) {
+  if (status?.connector === "cloud-api") {
+    return status.cloudApi?.configured ? "Webhook ready" : "Setup needed";
+  }
+  return status?.ready ? "Connected" : "No QR code yet";
 }
 
 function formatDateTime(value) {
