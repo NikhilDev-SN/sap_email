@@ -1,6 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { buildWhatsAppInquiry, isRelevantWhatsAppSalesOrderText } from "../src/whatsapp/whatsappClient.mjs";
+import { getConfig } from "../src/config.mjs";
+import { buildWhatsAppInquiry, isRelevantWhatsAppSalesOrderText, startWhatsAppClient } from "../src/whatsapp/whatsappClient.mjs";
 
 test("whatsapp scan matches minning sales order messages", () => {
   const match = isRelevantWhatsAppSalesOrderText(
@@ -39,4 +40,17 @@ test("whatsapp messages become inquiry input with stable source ids", () => {
   assert.equal(inquiry.threadId, "whatsapp:919999999999@c.us");
   assert.match(inquiry.from, /Apex Mining/);
   assert.match(inquiry.body, /Mining sales order/);
+});
+
+test("serverless whatsapp start returns disabled without loading browser client", async () => {
+  const status = await startWhatsAppClient(
+    getConfig({
+      NETLIFY: "true",
+      WHATSAPP_ENABLED: "true"
+    })
+  );
+
+  assert.equal(status.enabled, false);
+  assert.equal(status.status, "disabled");
+  assert.match(status.lastError, /serverless deployments/i);
 });

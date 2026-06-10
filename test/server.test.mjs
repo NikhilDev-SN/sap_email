@@ -53,7 +53,9 @@ test("serves WhatsApp dashboard status without starting a session", async () => 
   try {
     const response = await fetch(`${baseUrl}/whatsapp/status`);
     const result = await response.json();
-    const expectedEnabled = process.env.WHATSAPP_ENABLED !== "false";
+    const serverlessRuntime = Boolean(process.env.NETLIFY || process.env.VERCEL || process.env.AWS_LAMBDA_FUNCTION_NAME);
+    const expectedEnabled =
+      process.env.WHATSAPP_ENABLED !== "false" && !(serverlessRuntime && process.env.WHATSAPP_ALLOW_SERVERLESS !== "true");
 
     assert.equal(response.status, 200);
     assert.equal(result.enabled, expectedEnabled);

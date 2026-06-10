@@ -109,3 +109,22 @@ test("hana UAA service key alone is not treated as SQL-write ready", () => {
   assert.equal(readiness.ready, false);
   assert.ok(readiness.errors.some((error) => error.includes("JWT user mapping")));
 });
+
+test("serverless deployments disable WhatsApp browser sessions", () => {
+  const config = getConfig({
+    NETLIFY: "true",
+    WHATSAPP_ENABLED: "true"
+  });
+
+  assert.equal(config.whatsappEnabled, false);
+  assert.match(config.whatsappDisabledReason, /serverless deployments/i);
+});
+
+test("explicit local WhatsApp enable remains available outside serverless", () => {
+  const config = getConfig({
+    WHATSAPP_ENABLED: "true"
+  });
+
+  assert.equal(config.whatsappEnabled, true);
+  assert.equal(config.whatsappDisabledReason, "");
+});

@@ -45,6 +45,7 @@ const syncState = {
 
 export function getWhatsAppStatus(config) {
   const enabled = Boolean(config.whatsappEnabled);
+  const disabledReason = getDisabledReason(config);
 
   return {
     enabled,
@@ -58,7 +59,7 @@ export function getWhatsAppStatus(config) {
     lastQrAt: clientState.lastQrAt,
     lastReadyAt: clientState.lastReadyAt,
     lastDisconnectedAt: clientState.lastDisconnectedAt,
-    lastError: enabled ? clientState.lastError : "WhatsApp dashboard is disabled by WHATSAPP_ENABLED=false.",
+    lastError: enabled ? clientState.lastError : disabledReason,
     search: {
       terms: config.whatsappSearchTerms,
       chatLimit: config.whatsappChatLimit,
@@ -74,7 +75,7 @@ export function getWhatsAppStatus(config) {
 export async function startWhatsAppClient(config) {
   if (!config.whatsappEnabled) {
     clientState.status = "disabled";
-    clientState.lastError = "WhatsApp dashboard is disabled by WHATSAPP_ENABLED=false.";
+    clientState.lastError = getDisabledReason(config);
     return getWhatsAppStatus(config);
   }
 
@@ -442,4 +443,8 @@ function cleanErrorMessage(value) {
     .replace(/password=([^,}\s]+)/gi, "password=[redacted]")
     .replace(/clientsecret=([^,}\s]+)/gi, "clientsecret=[redacted]")
     .replace(/client_secret=[^&\s]+/gi, "client_secret=[redacted]");
+}
+
+function getDisabledReason(config) {
+  return config.whatsappDisabledReason || "WhatsApp dashboard is disabled by WHATSAPP_ENABLED=false.";
 }

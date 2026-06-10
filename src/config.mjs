@@ -9,6 +9,8 @@ export function getConfig(env = process.env) {
   const hanaAuthMode = normalizeHanaAuthMode(
     env.HANA_AUTH_MODE || (hanaUaa.clientid || hanaUaa.clientId ? "uaa-jwt" : "password")
   );
+  const disableWhatsAppForServerless =
+    isServerlessRuntime(env) && env.WHATSAPP_ALLOW_SERVERLESS !== "true";
 
   return {
     port: Number(env.PORT || 4000),
@@ -29,7 +31,10 @@ export function getConfig(env = process.env) {
     gmailSyncMaxResults: Number(env.GMAIL_SYNC_MAX_RESULTS || 10),
     gmailAutoSyncEnabled: env.GMAIL_AUTO_SYNC !== "false",
     gmailAutoSyncIntervalMs: Number(env.GMAIL_AUTO_SYNC_INTERVAL_MS || 60000),
-    whatsappEnabled: env.WHATSAPP_ENABLED !== "false",
+    whatsappEnabled: env.WHATSAPP_ENABLED !== "false" && !disableWhatsAppForServerless,
+    whatsappDisabledReason: disableWhatsAppForServerless
+      ? "WhatsApp QR login is disabled on serverless deployments. Run locally or on a persistent Node host to scan WhatsApp."
+      : "",
     whatsappSessionPath: env.WHATSAPP_SESSION_PATH || resolve("data", "whatsapp-session"),
     whatsappChromePath: env.WHATSAPP_CHROME_PATH || "",
     whatsappHeadless: env.WHATSAPP_HEADLESS !== "false",
@@ -109,6 +114,7 @@ export function getRuntimeStatus(config) {
     },
     whatsapp: {
       enabled: config.whatsappEnabled,
+      disabledReason: config.whatsappDisabledReason,
       searchTerms: config.whatsappSearchTerms,
       chatLimit: config.whatsappChatLimit,
       lookbackLimit: config.whatsappLookbackLimit,
@@ -322,6 +328,10 @@ function parseList(value) {
     .split(",")
     .map((item) => item.trim())
     .filter(Boolean);
+}
+
+function isServerlessRuntime(env) {
+  return Boolean(env.NETLIFY || env.VERCEL || env.AWS_LAMBDA_FUNCTION_NAME);
 }
 
 function hasSapDestinationBinding(env) {
