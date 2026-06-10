@@ -4,6 +4,7 @@ node_modules/
 npm-debug.log*
 coverage/
 .nyc_output/
+.netlify/
 destinations/*.properties
 data/opportunities.json
 data/google-oauth-token.json

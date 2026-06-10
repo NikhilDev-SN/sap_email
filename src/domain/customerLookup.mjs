@@ -1,9 +1,10 @@
 import { readFile } from "node:fs/promises";
+import { resolve } from "node:path";
 
-const CUSTOMER_MASTER_URL = new URL("../../data/customer-master.json", import.meta.url);
+const CUSTOMER_MASTER_PATH = resolve("data", "customer-master.json");
 
-export async function lookupCustomer(extracted, customerMasterUrl = CUSTOMER_MASTER_URL) {
-  const master = JSON.parse(await readFile(customerMasterUrl, "utf8"));
+export async function lookupCustomer(extracted, customerMasterPath = CUSTOMER_MASTER_PATH) {
+  const master = JSON.parse(await readFile(customerMasterPath, "utf8"));
   const email = extracted.customer.email?.toLowerCase() || "";
   const domain = email.split("@")[1] || "";
 

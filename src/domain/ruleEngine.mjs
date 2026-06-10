@@ -1,10 +1,11 @@
 import { readFile } from "node:fs/promises";
+import { resolve } from "node:path";
 import { planSapAction } from "./sapPlanner.mjs";
 
-const RULEBOOK_URL = new URL("../../data/rulebook.json", import.meta.url);
+const RULEBOOK_PATH = resolve("data", "rulebook.json");
 
-export async function loadRulebook(rulebookUrl = RULEBOOK_URL) {
-  return JSON.parse(await readFile(rulebookUrl, "utf8"));
+export async function loadRulebook(rulebookPath = RULEBOOK_PATH) {
+  return JSON.parse(await readFile(rulebookPath, "utf8"));
 }
 
 export function applyRules(extracted, customer, rulebook, config = {}) {

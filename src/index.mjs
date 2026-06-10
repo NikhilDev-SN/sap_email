@@ -1,7 +1,6 @@
 import http from "node:http";
 import { readFile } from "node:fs/promises";
 import { resolve } from "node:path";
-import { fileURLToPath } from "node:url";
 import {
   createGoogleAuthUrl,
   exchangeGoogleCodeForToken,
@@ -34,7 +33,7 @@ import {
 } from "./whatsapp/whatsappClient.mjs";
 
 const config = getConfig();
-const publicDir = fileURLToPath(new URL("../public/", import.meta.url));
+const publicDir = resolve("public");
 
 const server = http.createServer(handleRequest);
 
@@ -182,7 +181,7 @@ async function handleRequest(request, response) {
   }
 }
 
-if (process.argv[1] && fileURLToPath(import.meta.url) === resolve(process.argv[1])) {
+if (isDirectRun()) {
   listenWithFallback(server, config.port);
   startAutomaticMailSync(config);
 }
@@ -551,4 +550,8 @@ function escapeHtml(value) {
     };
     return replacements[character];
   });
+}
+
+function isDirectRun() {
+  return process.argv[1] ? resolve(process.argv[1]) === resolve("src", "index.mjs") : false;
 }

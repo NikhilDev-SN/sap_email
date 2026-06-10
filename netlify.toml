@@ -11,6 +11,9 @@
   SAP_MODE = "mock"
   WHATSAPP_ENABLED = "false"
 
+[functions]
+  included_files = ["data/**", "public/**"]
+
 [[redirects]]
   from = "/*"
   to = "/.netlify/functions/index"

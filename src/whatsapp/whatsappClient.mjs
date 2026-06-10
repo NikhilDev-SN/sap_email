@@ -1,10 +1,12 @@
 import { createHash } from "node:crypto";
 import { existsSync } from "node:fs";
 import { mkdir } from "node:fs/promises";
-import QRCode from "qrcode";
 import { prepareApprovalRecord } from "../domain/approvalWorkflow.mjs";
 import { processInquiry } from "../pipeline.mjs";
 import { saveOpportunityRecord, saveOpportunitySnapshot } from "../storage/opportunityStore.mjs";
+
+const QRCODE_PACKAGE = "qrcode";
+const WHATSAPP_WEB_PACKAGE = "whatsapp-web.js";
 
 const browserCandidates = [
   "C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe",
@@ -256,6 +258,7 @@ function wireClientEvents(client) {
     clientState.status = "qr";
     clientState.starting = false;
     clientState.ready = false;
+    const QRCode = await loadQrCodeDependency();
     clientState.qrDataUrl = await QRCode.toDataURL(qr, {
       margin: 1,
       width: 280,
@@ -315,10 +318,19 @@ function wireClientEvents(client) {
 
 async function loadWhatsAppDependency() {
   try {
-    const mod = await import("whatsapp-web.js");
+    const mod = await import(WHATSAPP_WEB_PACKAGE);
     return mod.default || mod;
   } catch (error) {
     throw new Error(`WhatsApp client dependency is not installed: ${cleanErrorMessage(error)}`);
+  }
+}
+
+async function loadQrCodeDependency() {
+  try {
+    const mod = await import(QRCODE_PACKAGE);
+    return mod.default || mod;
+  } catch (error) {
+    throw new Error(`QR code dependency is not installed: ${cleanErrorMessage(error)}`);
   }
 }
 
