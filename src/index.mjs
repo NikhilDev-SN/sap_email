@@ -215,12 +215,16 @@ async function handleRequest(request, response) {
   }
 }
 
-if (isDirectRun()) {
+function startServer() {
   listenWithFallback(server, config.port);
   startAutomaticMailSync(config);
 }
 
-export { handleRequest, server };
+if (isDirectRun()) {
+  startServer();
+}
+
+export { handleRequest, server, startServer };
 
 async function approveOpportunity(opportunityId, body) {
   if (!body.confirm) {

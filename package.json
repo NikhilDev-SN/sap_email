@@ -6,6 +6,7 @@
   "description": "AI-assisted inquiry intake service that extracts customer requests, applies rulebook logic, and creates SAP documents.",
   "scripts": {
     "start": "node src/index.mjs",
+    "whatsapp:worker": "node src/whatsappWorker.mjs",
     "test": "node --test"
   },
   "engines": {

@@ -43,14 +43,14 @@ The dashboard includes a WhatsApp tab for mining sales order messages. It suppor
 On Vercel and Netlify the app defaults to personal bridge mode, because personal WhatsApp QR login needs a long-running browser process and does not fit serverless functions. Run the same project on a persistent Node host or a local machine as the worker:
 
 ```bash
-WHATSAPP_ENABLED=true
-WHATSAPP_CONNECTOR=web
 WHATSAPP_BRIDGE_TOKEN=choose-a-long-random-token
 WHATSAPP_RECENT_MINUTES=5
-npm start
+npm run whatsapp:worker
 ```
 
-Open the worker dashboard, choose `WhatsApp`, click `Start QR login`, and scan the QR code with the personal WhatsApp account. Keep that worker running and expose it over HTTPS with your host, reverse proxy, ngrok, or Cloudflare Tunnel.
+`npm run whatsapp:worker` forces `WHATSAPP_CONNECTOR=web`, enables the personal QR login worker, and defaults to port `4100` when no platform `PORT` is set.
+
+Open the worker dashboard, choose `WhatsApp`, click `Start QR login`, and scan the QR code with the personal WhatsApp account. Keep that worker running and expose it over HTTPS with your host, reverse proxy, ngrok, or Cloudflare Tunnel. The deployed dashboard needs the public base URL of this worker.
 
 Then configure Vercel/Netlify with:
 
