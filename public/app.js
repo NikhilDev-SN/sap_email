@@ -32,12 +32,15 @@ const recordCustomerList = document.querySelector("#record-customer-list");
 const recordPoList = document.querySelector("#record-po-list");
 const recordCommercialList = document.querySelector("#record-commercial-list");
 const recordFulfillmentList = document.querySelector("#record-fulfillment-list");
+const recordSourceSummary = document.querySelector("#record-source-summary");
 const recordEmailBody = document.querySelector("#record-email-body");
 const whatsappStartButton = document.querySelector("#whatsapp-start-button");
 const whatsappScanButton = document.querySelector("#whatsapp-scan-button");
 const whatsappActionStatus = document.querySelector("#whatsapp-action-status");
+const whatsappHeaderStatus = document.querySelector("#whatsapp-header-status");
 const whatsappLoginStatus = document.querySelector("#whatsapp-login-status");
 const whatsappScanStatus = document.querySelector("#whatsapp-scan-status");
+const whatsappLayout = document.querySelector("#whatsapp-layout");
 const whatsappQrImage = document.querySelector("#whatsapp-qr-image");
 const whatsappQrPlaceholder = document.querySelector("#whatsapp-qr-placeholder");
 const whatsappMetaList = document.querySelector("#whatsapp-meta-list");
@@ -346,10 +349,14 @@ function updateWhatsAppStatus(status) {
   const statusLabel = formatWhatsAppConnection(status);
   const cloudMode = status.connector === "cloud-api";
   const bridgeMode = status.connector === "personal-bridge";
+  const connectionPanelHidden = status.ready && !status.qrDataUrl;
 
   whatsappStatusText.textContent = `WhatsApp: ${statusLabel}`;
+  whatsappHeaderStatus.textContent = statusLabel;
+  whatsappHeaderStatus.className = `connection-pill ${getWhatsAppStatusTone(status)}`;
   whatsappLoginStatus.textContent = formatWhatsAppLoginStatus(status);
   whatsappScanStatus.textContent = formatWhatsAppScanStatus(status);
+  whatsappLayout.classList.toggle("connection-compact", connectionPanelHidden);
   whatsappScanButton.disabled = cloudMode || !status.ready || sync.running;
   whatsappStartButton.disabled = !status.enabled || status.starting;
   whatsappStartButton.textContent = cloudMode ? "Webhook mode" : bridgeMode ? "Bridge mode" : "Start QR login";
@@ -723,7 +730,8 @@ function renderRecordPage(recordId) {
     renderDefinitionList(recordPoList, []);
     renderDefinitionList(recordCommercialList, []);
     renderDefinitionList(recordFulfillmentList, []);
-    recordEmailBody.textContent = "No email selected.";
+    recordSourceSummary.textContent = "Source message text";
+    recordEmailBody.textContent = "No source message selected.";
     recordTagSelect.disabled = true;
     recordTagStatus.textContent = "";
     return;
@@ -763,7 +771,21 @@ function renderRecordPage(recordId) {
     ["Next step", fulfillment.nextAction]
   ]);
 
-  recordEmailBody.textContent = record.extracted?.rawSummary || "No email text stored.";
+  const whatsappRecord = isWhatsAppRecord(record);
+  recordSourceSummary.textContent = whatsappRecord ? "WhatsApp message text" : "Full email text";
+  recordEmailBody.textContent =
+    record.extracted?.rawSummary || (whatsappRecord ? "No WhatsApp message text stored." : "No email text stored.");
+}
+
+function isWhatsAppRecord(record) {
+  return [
+    record?.extracted?.source?.provider,
+    record?.extracted?.source?.source,
+    record?.extracted?.source?.messageId,
+    record?.opportunity?.sourceMessageId
+  ]
+    .filter(Boolean)
+    .some((value) => String(value).toLowerCase().includes("whatsapp"));
 }
 
 function renderCharts() {
@@ -1184,6 +1206,20 @@ function formatSyncStatus(sync) {
     return `Auto sync active: ${sync.lastProcessed || 0} processed`;
   }
   return sync.autoSyncEnabled ? "Auto sync active" : "Auto sync disabled";
+}
+
+function getWhatsAppStatusTone(status) {
+  const value = String(status?.status || "").toLowerCase();
+  if (status?.ready || value === "webhook_ready" || value === "bridge_ready") {
+    return "ready";
+  }
+  if (value === "auth_failed" || value === "error" || status?.lastError) {
+    return "error";
+  }
+  if (value.includes("setup") || value === "disabled" || value === "disconnected") {
+    return "warning";
+  }
+  return "neutral";
 }
 
 function formatWhatsAppConnection(status) {

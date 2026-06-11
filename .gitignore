@@ -9,3 +9,5 @@ destinations/*.properties
 data/opportunities.json
 data/google-oauth-token.json
 data/whatsapp-session/
+.wwebjs_auth/
+.wwebjs_cache/

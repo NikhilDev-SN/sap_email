@@ -55,6 +55,7 @@
               <h1>WhatsApp sales orders</h1>
             </div>
             <div class="view-actions">
+              <span class="connection-pill" id="whatsapp-header-status">Checking</span>
               <button class="secondary" type="button" id="whatsapp-start-button">Connect</button>
               <button class="primary" type="button" id="whatsapp-scan-button">Scan messages</button>
             </div>
@@ -81,7 +82,7 @@
 
           <p class="action-status" id="whatsapp-action-status" role="status"></p>
 
-          <section class="whatsapp-layout" aria-label="WhatsApp login and message matches">
+          <section class="whatsapp-layout" id="whatsapp-layout" aria-label="WhatsApp login and message matches">
             <article class="whatsapp-login-panel">
               <div class="table-panel-header single">
                 <div>
@@ -331,7 +332,7 @@
 
             <section class="detail-block email-block">
               <details class="email-details">
-                <summary>Full email text</summary>
+                <summary id="record-source-summary">Full email text</summary>
                 <div class="email-body" id="record-email-body">No email selected.</div>
               </details>
             </section>

@@ -159,6 +159,40 @@ button:disabled {
   flex-wrap: wrap;
   gap: 10px;
   justify-content: flex-end;
+  align-items: center;
+}
+
+.connection-pill {
+  display: inline-flex;
+  min-height: 32px;
+  align-items: center;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  padding: 0 11px;
+  background: #f8fafb;
+  color: var(--muted);
+  font-size: 0.78rem;
+  font-weight: 850;
+  line-height: 1;
+  white-space: nowrap;
+}
+
+.connection-pill.ready {
+  border-color: rgba(47, 125, 79, 0.24);
+  background: #edf8f1;
+  color: var(--green);
+}
+
+.connection-pill.warning {
+  border-color: rgba(183, 121, 31, 0.26);
+  background: #fff8ea;
+  color: var(--amber);
+}
+
+.connection-pill.error {
+  border-color: rgba(200, 85, 61, 0.26);
+  background: #fff1ee;
+  color: var(--coral);
 }
 
 .eyeline {
@@ -662,6 +696,14 @@ dt {
   align-items: start;
 }
 
+.whatsapp-layout.connection-compact {
+  grid-template-columns: minmax(0, 1fr);
+}
+
+.whatsapp-layout.connection-compact .whatsapp-login-panel {
+  display: none;
+}
+
 .whatsapp-login-panel {
   min-width: 0;
   padding: 16px;
@@ -741,8 +783,29 @@ dt {
   padding-top: 14px;
 }
 
-.whatsapp-table {
-  min-width: 780px;
+.opportunity-table.whatsapp-table {
+  min-width: 0;
+  table-layout: fixed;
+}
+
+.whatsapp-table th:nth-child(1),
+.whatsapp-table td:nth-child(1) {
+  width: 20%;
+}
+
+.whatsapp-table th:nth-child(2),
+.whatsapp-table td:nth-child(2) {
+  width: 38%;
+}
+
+.whatsapp-table th:nth-child(3),
+.whatsapp-table td:nth-child(3) {
+  width: 22%;
+}
+
+.whatsapp-table th:nth-child(4),
+.whatsapp-table td:nth-child(4) {
+  width: 20%;
 }
 
 .opportunity-table {
