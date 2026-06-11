@@ -9,8 +9,9 @@
   OPPORTUNITY_STORE_BACKEND = "file"
   PUPPETEER_SKIP_DOWNLOAD = "true"
   SAP_MODE = "mock"
-  WHATSAPP_CONNECTOR = "cloud-api"
+  WHATSAPP_CONNECTOR = "personal-bridge"
   WHATSAPP_ENABLED = "true"
+  WHATSAPP_RECENT_MINUTES = "5"
 
 [functions]
   included_files = ["data/**", "public/**"]

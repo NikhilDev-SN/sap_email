@@ -17,6 +17,8 @@ export function getConfig(env = process.env) {
   const whatsappCloudVerifyToken = env.WHATSAPP_CLOUD_VERIFY_TOKEN || env.WHATSAPP_VERIFY_TOKEN || "";
   const whatsappCloudAccessToken = env.WHATSAPP_CLOUD_ACCESS_TOKEN || "";
   const whatsappCloudPhoneNumberId = env.WHATSAPP_CLOUD_PHONE_NUMBER_ID || "";
+  const whatsappPersonalBridgeUrl = env.WHATSAPP_PERSONAL_BRIDGE_URL || env.WHATSAPP_BRIDGE_URL || "";
+  const whatsappPersonalBridgeToken = env.WHATSAPP_PERSONAL_BRIDGE_TOKEN || env.WHATSAPP_BRIDGE_TOKEN || "";
 
   return {
     port: Number(env.PORT || 4000),
@@ -42,6 +44,7 @@ export function getConfig(env = process.env) {
     whatsappConnector,
     whatsappWebEnabled: whatsappEnabled && whatsappConnector === "web" && !disableWhatsAppWebForServerless,
     whatsappCloudEnabled: whatsappEnabled && whatsappConnector === "cloud-api",
+    whatsappPersonalBridgeEnabled: whatsappEnabled && whatsappConnector === "personal-bridge",
     whatsappDisabledReason: !whatsappEnabled ? "WhatsApp intake is disabled by WHATSAPP_ENABLED=false." : "",
     whatsappQrDisabledReason: disableWhatsAppWebForServerless
       ? "WhatsApp QR login is disabled on serverless deployments. Run locally or on a persistent Node host to scan WhatsApp."
@@ -54,6 +57,10 @@ export function getConfig(env = process.env) {
     whatsappCloudAccessToken,
     whatsappCloudPhoneNumberId,
     whatsappCloudAppSecret: env.WHATSAPP_CLOUD_APP_SECRET || "",
+    whatsappPersonalBridgeUrl,
+    whatsappPersonalBridgePath: env.WHATSAPP_PERSONAL_BRIDGE_PATH || "/whatsapp/personal/recent",
+    whatsappPersonalBridgeToken,
+    whatsappRecentMinutes: Number(env.WHATSAPP_RECENT_MINUTES || 5),
     whatsappChatLimit: Number(env.WHATSAPP_CHAT_LIMIT || 30),
     whatsappLookbackLimit: Number(env.WHATSAPP_LOOKBACK_LIMIT || 50),
     whatsappProcessLimit: Number(env.WHATSAPP_PROCESS_LIMIT || 20),
@@ -137,6 +144,7 @@ export function getRuntimeStatus(config) {
       chatLimit: config.whatsappChatLimit,
       lookbackLimit: config.whatsappLookbackLimit,
       processLimit: config.whatsappProcessLimit,
+      recentMinutes: config.whatsappRecentMinutes,
       qrLogin: {
         enabled: config.whatsappWebEnabled,
         browserConfigured: Boolean(config.whatsappChromePath),
@@ -151,6 +159,14 @@ export function getRuntimeStatus(config) {
         phoneNumberIdConfigured: Boolean(config.whatsappCloudPhoneNumberId),
         appSecretConfigured: Boolean(config.whatsappCloudAppSecret),
         configured: Boolean(config.whatsappCloudVerifyToken)
+      },
+      personalBridge: {
+        enabled: config.whatsappPersonalBridgeEnabled,
+        urlConfigured: Boolean(config.whatsappPersonalBridgeUrl),
+        endpoint: joinPublicUrl(config.whatsappPersonalBridgeUrl, config.whatsappPersonalBridgePath),
+        tokenConfigured: Boolean(config.whatsappPersonalBridgeToken),
+        recentMinutes: config.whatsappRecentMinutes,
+        configured: Boolean(config.whatsappPersonalBridgeUrl)
       },
       browserConfigured: Boolean(config.whatsappChromePath),
       headless: config.whatsappHeadless
@@ -372,6 +388,9 @@ function normalizeWhatsAppConnector(value, env, serverlessRuntime) {
   if (["cloud", "cloud-api", "business", "business-cloud", "meta", "meta-cloud"].includes(connector)) {
     return "cloud-api";
   }
+  if (["personal", "personal-bridge", "bridge", "web-bridge"].includes(connector)) {
+    return "personal-bridge";
+  }
   if (["web", "qr", "whatsapp-web", "whatsapp-web.js"].includes(connector)) {
     return "web";
   }
@@ -386,7 +405,10 @@ function normalizeWhatsAppConnector(value, env, serverlessRuntime) {
   ) {
     return "cloud-api";
   }
-  return serverlessRuntime ? "cloud-api" : "web";
+  if (env.WHATSAPP_PERSONAL_BRIDGE_URL || env.WHATSAPP_BRIDGE_URL) {
+    return "personal-bridge";
+  }
+  return serverlessRuntime ? "personal-bridge" : "web";
 }
 
 function getPublicBaseUrl(env) {

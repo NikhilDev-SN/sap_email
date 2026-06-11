@@ -1,14 +1,17 @@
 import test from "node:test";
 import assert from "node:assert/strict";
+import { createServer } from "node:http";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { getConfig } from "../src/config.mjs";
 import {
   buildWhatsAppCloudInquiry,
   buildWhatsAppInquiry,
+  isRecentWhatsAppMessage,
   isRelevantWhatsAppSalesOrderText,
   processWhatsAppCloudWebhook,
   startWhatsAppClient,
+  syncWhatsAppSalesOrderMessages,
   verifyWhatsAppCloudWebhook
 } from "../src/whatsapp/whatsappClient.mjs";
 
@@ -51,7 +54,7 @@ test("whatsapp messages become inquiry input with stable source ids", () => {
   assert.match(inquiry.body, /Mining sales order/);
 });
 
-test("serverless whatsapp start returns cloud status without loading browser client", async () => {
+test("serverless whatsapp start returns personal bridge status without loading browser client", async () => {
   const status = await startWhatsAppClient(
     getConfig({
       NETLIFY: "true",
@@ -60,11 +63,84 @@ test("serverless whatsapp start returns cloud status without loading browser cli
   );
 
   assert.equal(status.enabled, true);
-  assert.equal(status.connector, "cloud-api");
-  assert.equal(status.status, "cloud_setup_required");
+  assert.equal(status.connector, "personal-bridge");
+  assert.equal(status.status, "bridge_setup_required");
   assert.equal(status.web.enabled, false);
-  assert.equal(status.cloudApi.enabled, true);
-  assert.match(status.lastError, /WHATSAPP_CLOUD_VERIFY_TOKEN/i);
+  assert.equal(status.personalBridge.enabled, true);
+  assert.match(status.lastError, /WHATSAPP_PERSONAL_BRIDGE_URL/i);
+});
+
+test("whatsapp recent filter keeps only messages inside the scan window", () => {
+  const since = new Date("2026-06-11T10:00:00.000Z");
+
+  assert.equal(isRecentWhatsAppMessage({ timestamp: 1781172000 }, since), true);
+  assert.equal(isRecentWhatsAppMessage({ timestamp: 1781171999 }, since), false);
+  assert.equal(isRecentWhatsAppMessage({}, since), false);
+});
+
+test("personal bridge sync makes one recent-window request to the worker", async () => {
+  let requestCount = 0;
+  let requestBody = null;
+  let authorization = "";
+  const worker = createServer(async (request, response) => {
+    requestCount += 1;
+    authorization = request.headers.authorization || "";
+    let body = "";
+    for await (const chunk of request) {
+      body += chunk;
+    }
+    requestBody = JSON.parse(body);
+    response.writeHead(200, {
+      "Content-Type": "application/json",
+      "Connection": "close"
+    });
+    response.end(
+      JSON.stringify({
+        scannedChats: 2,
+        scannedMessages: 3,
+        matched: 1,
+        processed: 1,
+        readyForApproval: 1,
+        since: "2026-06-11T09:55:00.000Z",
+        opportunities: [],
+        matches: [
+          {
+            recordId: "record-1",
+            preview: "Mining sales order for 700 tons iron ore"
+          }
+        ]
+      })
+    );
+  });
+  const workerUrl = await listenWorker(worker);
+
+  try {
+    const result = await syncWhatsAppSalesOrderMessages(
+      getConfig({
+        WHATSAPP_CONNECTOR: "personal-bridge",
+        WHATSAPP_ENABLED: "true",
+        WHATSAPP_PERSONAL_BRIDGE_URL: workerUrl,
+        WHATSAPP_PERSONAL_BRIDGE_TOKEN: "bridge-token",
+        WHATSAPP_RECENT_MINUTES: "7",
+        WHATSAPP_CHAT_LIMIT: "40",
+        WHATSAPP_LOOKBACK_LIMIT: "60",
+        WHATSAPP_PROCESS_LIMIT: "9"
+      })
+    );
+
+    assert.equal(requestCount, 1);
+    assert.equal(authorization, "Bearer bridge-token");
+    assert.equal(requestBody.recentMinutes, 7);
+    assert.equal(requestBody.chatLimit, 40);
+    assert.equal(requestBody.lookbackLimit, 60);
+    assert.equal(requestBody.processLimit, 9);
+    assert.equal(result.connector, "personal-bridge");
+    assert.equal(result.matched, 1);
+    assert.equal(result.processed, 1);
+    assert.match(result.matches[0].preview, /Mining sales order/i);
+  } finally {
+    await closeWorker(worker);
+  }
 });
 
 test("whatsapp cloud webhook verification returns the Meta challenge", () => {
@@ -165,3 +241,25 @@ test("whatsapp cloud webhook processes mining sales order messages", async () =>
   assert.equal(result.opportunities.length, 1);
   assert.match(result.matches[0].preview, /Mining sales order/);
 });
+
+function listenWorker(server) {
+  return new Promise((resolve) => {
+    server.listen(0, "127.0.0.1", () => {
+      const address = server.address();
+      resolve(`http://127.0.0.1:${address.port}`);
+    });
+  });
+}
+
+function closeWorker(server) {
+  return new Promise((resolve, reject) => {
+    server.close((error) => {
+      if (error) {
+        reject(error);
+        return;
+      }
+      resolve();
+    });
+    server.closeAllConnections?.();
+  });
+}

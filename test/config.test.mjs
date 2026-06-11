@@ -110,17 +110,31 @@ test("hana UAA service key alone is not treated as SQL-write ready", () => {
   assert.ok(readiness.errors.some((error) => error.includes("JWT user mapping")));
 });
 
-test("serverless deployments use WhatsApp Cloud API instead of browser sessions", () => {
+test("serverless deployments use WhatsApp personal bridge instead of browser sessions", () => {
   const config = getConfig({
     NETLIFY: "true",
     WHATSAPP_ENABLED: "true"
   });
 
   assert.equal(config.whatsappEnabled, true);
-  assert.equal(config.whatsappConnector, "cloud-api");
-  assert.equal(config.whatsappCloudEnabled, true);
+  assert.equal(config.whatsappConnector, "personal-bridge");
+  assert.equal(config.whatsappPersonalBridgeEnabled, true);
+  assert.equal(config.whatsappCloudEnabled, false);
   assert.equal(config.whatsappWebEnabled, false);
   assert.equal(config.whatsappQrDisabledReason, "");
+});
+
+test("WhatsApp Cloud API can still be explicitly selected", () => {
+  const config = getConfig({
+    NETLIFY: "true",
+    WHATSAPP_ENABLED: "true",
+    WHATSAPP_CONNECTOR: "cloud-api",
+    WHATSAPP_CLOUD_VERIFY_TOKEN: "verify-me"
+  });
+
+  assert.equal(config.whatsappConnector, "cloud-api");
+  assert.equal(config.whatsappCloudEnabled, true);
+  assert.equal(config.whatsappPersonalBridgeEnabled, false);
 });
 
 test("explicit local WhatsApp enable remains available outside serverless", () => {

@@ -34,31 +34,41 @@ curl -X POST http://localhost:4000/inquiries/process \
 
 ## WhatsApp Dashboard
 
-The dashboard includes a WhatsApp tab for mining sales order messages. It supports two connector modes:
+The dashboard includes a WhatsApp tab for mining sales order messages. It supports personal WhatsApp accounts through a bridge worker:
 
-- `WHATSAPP_CONNECTOR=cloud-api` for Vercel/Netlify/serverless production using the official WhatsApp Business Cloud API webhook.
-- `WHATSAPP_CONNECTOR=web` for local QR login with `whatsapp-web.js`.
+- `WHATSAPP_CONNECTOR=personal-bridge` for Vercel/Netlify. The deployed dashboard makes one request to a persistent worker and fetches only messages received in the last few minutes.
+- `WHATSAPP_CONNECTOR=web` for the persistent worker/local app. This uses QR login with `whatsapp-web.js` and works with a personal WhatsApp account.
+- `WHATSAPP_CONNECTOR=cloud-api` remains available for WhatsApp Business Cloud API webhook setups, but it is not required for personal-account use.
 
-On Vercel and Netlify the app defaults to Cloud API mode, because QR login needs a long-running browser process and does not fit serverless functions. Configure these deployment environment variables:
+On Vercel and Netlify the app defaults to personal bridge mode, because personal WhatsApp QR login needs a long-running browser process and does not fit serverless functions. Run the same project on a persistent Node host or a local machine as the worker:
 
 ```bash
 WHATSAPP_ENABLED=true
-WHATSAPP_CONNECTOR=cloud-api
-WHATSAPP_CLOUD_VERIFY_TOKEN=choose-a-long-random-token
-PUBLIC_BASE_URL=https://your-deployed-site.example
+WHATSAPP_CONNECTOR=web
+WHATSAPP_BRIDGE_TOKEN=choose-a-long-random-token
+WHATSAPP_RECENT_MINUTES=5
+npm start
 ```
 
-Then in the Meta WhatsApp app webhook settings, use:
+Open the worker dashboard, choose `WhatsApp`, click `Start QR login`, and scan the QR code with the personal WhatsApp account. Keep that worker running and expose it over HTTPS with your host, reverse proxy, ngrok, or Cloudflare Tunnel.
+
+Then configure Vercel/Netlify with:
+
+```bash
+WHATSAPP_ENABLED=true
+WHATSAPP_CONNECTOR=personal-bridge
+WHATSAPP_PERSONAL_BRIDGE_URL=https://your-worker.example
+WHATSAPP_PERSONAL_BRIDGE_TOKEN=the-same-token-as-the-worker
+WHATSAPP_RECENT_MINUTES=5
+```
+
+The deployed dashboard's `Fetch recent` button calls:
 
 ```text
-Callback URL: https://your-deployed-site.example/whatsapp/webhook
-Verify token: the same WHATSAPP_CLOUD_VERIFY_TOKEN value
-Webhook field: messages
+POST https://your-worker.example/whatsapp/personal/recent
 ```
 
-Incoming Cloud API text, button, list, document-caption, and image-caption messages are checked for mining sales order intent and processed through the same opportunity pipeline as Gmail.
-
-For local QR login, start the app, open the dashboard, choose `WhatsApp`, click `Start QR login`, scan the QR code with WhatsApp, then click `Scan messages`.
+The worker scans chats, keeps only messages received within `WHATSAPP_RECENT_MINUTES`, filters for mining sales order intent, and sends the matching opportunities back to the deployed dashboard.
 
 Matching messages are processed through the same inquiry pipeline as Gmail and land in the approval queue. The default search catches `mining sales order`, the typo `minning sales order`, and common ore/coal sales order phrases. Tune it with:
 
@@ -66,6 +76,7 @@ Matching messages are processed through the same inquiry pipeline as Gmail and l
 WHATSAPP_SEARCH_TERMS=mining sales order,minning sales order,iron ore sales order
 WHATSAPP_CHAT_LIMIT=30
 WHATSAPP_LOOKBACK_LIMIT=50
+WHATSAPP_PROCESS_LIMIT=20
 ```
 
 The WhatsApp Web session is saved under `data/whatsapp-session` and is ignored by Git. If Puppeteer cannot find Chrome or Edge automatically, set `WHATSAPP_CHROME_PATH` to the browser executable path.

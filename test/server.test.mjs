@@ -16,8 +16,10 @@ process.env.HANA_UAA_URL = "";
 process.env.HANA_CLIENT_ID = "";
 process.env.HANA_CLIENT_SECRET = "";
 process.env.WHATSAPP_ENABLED = "true";
-process.env.WHATSAPP_CONNECTOR = "cloud-api";
-process.env.WHATSAPP_CLOUD_VERIFY_TOKEN = "server-test-token";
+process.env.WHATSAPP_CONNECTOR = "personal-bridge";
+process.env.WHATSAPP_PERSONAL_BRIDGE_URL = "https://worker.example";
+process.env.WHATSAPP_PERSONAL_BRIDGE_TOKEN = "server-test-token";
+process.env.WHATSAPP_RECENT_MINUTES = "5";
 const { server } = await import("../src/index.mjs");
 
 test("serves the inquiry UI", async () => {
@@ -59,26 +61,35 @@ test("serves WhatsApp dashboard status without starting a session", async () => 
 
     assert.equal(response.status, 200);
     assert.equal(result.enabled, true);
-    assert.equal(result.connector, "cloud-api");
+    assert.equal(result.connector, "personal-bridge");
     assert.equal(result.ready, true);
-    assert.equal(result.status, "webhook_ready");
-    assert.equal(result.cloudApi.configured, true);
+    assert.equal(result.status, "bridge_ready");
+    assert.equal(result.personalBridge.configured, true);
+    assert.equal(result.personalBridge.recentMinutes, 5);
     assert.ok(result.search.terms.includes("minning sales order"));
   } finally {
     await close();
   }
 });
 
-test("verifies WhatsApp Cloud API webhook challenge", async () => {
+test("personal worker endpoint is only available on the QR worker", async () => {
   const baseUrl = await listen();
   try {
-    const response = await fetch(
-      `${baseUrl}/whatsapp/webhook?hub.mode=subscribe&hub.verify_token=server-test-token&hub.challenge=challenge-123`
-    );
-    const result = await response.text();
+    const response = await fetch(`${baseUrl}/whatsapp/personal/recent`, {
+      method: "POST",
+      headers: {
+        "Authorization": "Bearer server-test-token",
+        "Content-Type": "application/json"
+      },
+      body: JSON.stringify({
+        recentMinutes: 5
+      })
+    });
+    const result = await response.json();
 
-    assert.equal(response.status, 200);
-    assert.equal(result, "challenge-123");
+    assert.equal(response.status, 409);
+    assert.equal(result.ok, false);
+    assert.match(result.message, /WHATSAPP_CONNECTOR=web/i);
   } finally {
     await close();
   }

@@ -40,6 +40,7 @@ const syncState = {
   lastMatched: 0,
   lastProcessed: 0,
   lastReadyForApproval: 0,
+  lastSince: null,
   lastMatches: []
 };
 
@@ -55,16 +56,35 @@ const cloudState = {
   lastMatches: []
 };
 
+const bridgeState = {
+  running: false,
+  lastStartedAt: null,
+  lastFinishedAt: null,
+  lastError: null,
+  lastEndpoint: null,
+  lastScannedChats: 0,
+  lastScannedMessages: 0,
+  lastMatched: 0,
+  lastProcessed: 0,
+  lastReadyForApproval: 0,
+  lastSince: null,
+  lastMatches: []
+};
+
 export function getWhatsAppStatus(config) {
   const enabled = Boolean(config.whatsappEnabled);
   const connector = config.whatsappConnector || "web";
   const webEnabled = Boolean(config.whatsappWebEnabled);
   const cloudEnabled = Boolean(config.whatsappCloudEnabled);
+  const bridgeEnabled = Boolean(config.whatsappPersonalBridgeEnabled);
   const cloudReady = cloudEnabled && Boolean(config.whatsappCloudVerifyToken);
+  const bridgeReady = bridgeEnabled && Boolean(config.whatsappPersonalBridgeUrl);
   const disabledReason = getDisabledReason(config);
   const qrDisabledReason = getQrDisabledReason(config);
   const cloudSetupMessage =
     "WhatsApp Cloud API needs WHATSAPP_CLOUD_VERIFY_TOKEN in your Vercel/Netlify environment, then set the Meta callback URL to /whatsapp/webhook.";
+  const bridgeSetupMessage =
+    "Personal WhatsApp needs WHATSAPP_PERSONAL_BRIDGE_URL pointing to a persistent QR-login worker.";
   const cloudSyncState = {
     running: false,
     lastStartedAt: null,
@@ -77,6 +97,19 @@ export function getWhatsAppStatus(config) {
     lastReadyForApproval: cloudState.lastReadyForApproval,
     lastMatches: cloudState.lastMatches
   };
+  const bridgeSyncState = {
+    running: bridgeState.running,
+    lastStartedAt: bridgeState.lastStartedAt,
+    lastFinishedAt: bridgeState.lastFinishedAt,
+    lastError: bridgeState.lastError,
+    lastScannedChats: bridgeState.lastScannedChats,
+    lastScannedMessages: bridgeState.lastScannedMessages,
+    lastMatched: bridgeState.lastMatched,
+    lastProcessed: bridgeState.lastProcessed,
+    lastReadyForApproval: bridgeState.lastReadyForApproval,
+    lastSince: bridgeState.lastSince,
+    lastMatches: bridgeState.lastMatches
+  };
 
   return {
     enabled,
@@ -86,16 +119,18 @@ export function getWhatsAppStatus(config) {
       connector,
       webEnabled,
       cloudEnabled,
-      cloudReady
+      cloudReady,
+      bridgeEnabled,
+      bridgeReady
     }),
     starting: webEnabled ? clientState.starting : false,
-    authenticated: cloudEnabled ? cloudReady : webEnabled ? clientState.authenticated : false,
-    ready: cloudEnabled ? cloudReady : webEnabled ? clientState.ready : false,
+    authenticated: cloudEnabled ? cloudReady : bridgeEnabled ? bridgeReady : webEnabled ? clientState.authenticated : false,
+    ready: cloudEnabled ? cloudReady : bridgeEnabled ? bridgeReady : webEnabled ? clientState.ready : false,
     hasQr: webEnabled ? Boolean(clientState.qrDataUrl) : false,
     qrDataUrl: webEnabled ? clientState.qrDataUrl : null,
     loading: webEnabled ? clientState.loading : null,
     lastQrAt: webEnabled ? clientState.lastQrAt : null,
-    lastReadyAt: cloudEnabled ? cloudState.lastVerificationAt : clientState.lastReadyAt,
+    lastReadyAt: cloudEnabled ? cloudState.lastVerificationAt : bridgeEnabled ? bridgeState.lastFinishedAt : clientState.lastReadyAt,
     lastDisconnectedAt: webEnabled ? clientState.lastDisconnectedAt : null,
     lastError: getConnectionError({
       enabled,
@@ -103,9 +138,12 @@ export function getWhatsAppStatus(config) {
       webEnabled,
       cloudEnabled,
       cloudReady,
+      bridgeEnabled,
+      bridgeReady,
       disabledReason,
       qrDisabledReason,
-      cloudSetupMessage
+      cloudSetupMessage,
+      bridgeSetupMessage
     }),
     web: {
       enabled: webEnabled,
@@ -126,14 +164,23 @@ export function getWhatsAppStatus(config) {
       lastVerificationAt: cloudState.lastVerificationAt,
       lastIgnored: cloudState.lastIgnored
     },
+    personalBridge: {
+      enabled: bridgeEnabled,
+      configured: bridgeReady,
+      endpoint: buildPersonalBridgeUrl(config),
+      tokenConfigured: Boolean(config.whatsappPersonalBridgeToken),
+      recentMinutes: config.whatsappRecentMinutes,
+      lastEndpoint: bridgeState.lastEndpoint
+    },
     search: {
       terms: config.whatsappSearchTerms,
       chatLimit: config.whatsappChatLimit,
       lookbackLimit: config.whatsappLookbackLimit,
-      processLimit: config.whatsappProcessLimit
+      processLimit: config.whatsappProcessLimit,
+      recentMinutes: config.whatsappRecentMinutes
     },
     sync: {
-      ...(cloudEnabled ? cloudSyncState : syncState)
+      ...(cloudEnabled ? cloudSyncState : bridgeEnabled ? bridgeSyncState : syncState)
     }
   };
 }
@@ -143,6 +190,8 @@ export async function startWhatsAppClient(config) {
     clientState.status = "disabled";
     clientState.lastError = config.whatsappCloudEnabled
       ? "WhatsApp Cloud API does not use QR login. Configure the Meta webhook URL instead."
+      : config.whatsappPersonalBridgeEnabled
+        ? "Personal WhatsApp bridge does not use QR login on this deployment. Run the worker in QR mode and fetch recent messages from it."
       : getQrDisabledReason(config) || getDisabledReason(config);
     return getWhatsAppStatus(config);
   }
@@ -213,6 +262,10 @@ export async function syncWhatsAppSalesOrderMessages(config) {
     };
   }
 
+  if (config.whatsappPersonalBridgeEnabled) {
+    return syncWhatsAppPersonalBridge(config);
+  }
+
   if (syncState.running) {
     return {
       ...getWhatsAppStatus(config),
@@ -230,6 +283,7 @@ export async function syncWhatsAppSalesOrderMessages(config) {
   syncState.lastError = null;
 
   try {
+    const since = getRecentSince(config);
     const chats = await clientState.client.getChats();
     const selectedChats = chats.slice(0, Math.max(1, config.whatsappChatLimit || 30));
     const candidates = [];
@@ -237,9 +291,10 @@ export async function syncWhatsAppSalesOrderMessages(config) {
 
     for (const chat of selectedChats) {
       const messages = await fetchChatMessages(chat, config.whatsappLookbackLimit);
-      scannedMessages += messages.length;
+      const recentMessages = messages.filter((message) => isRecentWhatsAppMessage(message, since));
+      scannedMessages += recentMessages.length;
 
-      for (const message of messages) {
+      for (const message of recentMessages) {
         const match = isRelevantWhatsAppSalesOrderText(message.body || "", config.whatsappSearchTerms);
         if (match.matched) {
           candidates.push({
@@ -276,6 +331,7 @@ export async function syncWhatsAppSalesOrderMessages(config) {
     syncState.lastMatched = candidates.length;
     syncState.lastProcessed = records.length;
     syncState.lastReadyForApproval = readyForApproval;
+    syncState.lastSince = since.toISOString();
     syncState.lastMatches = matches;
     syncState.lastFinishedAt = new Date().toISOString();
     syncState.running = false;
@@ -287,6 +343,8 @@ export async function syncWhatsAppSalesOrderMessages(config) {
       matched: candidates.length,
       processed: records.length,
       readyForApproval,
+      since: since.toISOString(),
+      recentMinutes: config.whatsappRecentMinutes,
       opportunities: records,
       matches
     };
@@ -297,6 +355,81 @@ export async function syncWhatsAppSalesOrderMessages(config) {
   } finally {
     syncState.running = false;
   }
+}
+
+async function syncWhatsAppPersonalBridge(config) {
+  if (bridgeState.running) {
+    return {
+      ...getWhatsAppStatus(config),
+      skipped: true,
+      message: "A personal WhatsApp bridge scan is already running."
+    };
+  }
+
+  const endpoint = buildPersonalBridgeUrl(config);
+  if (!endpoint) {
+    throw new Error("Set WHATSAPP_PERSONAL_BRIDGE_URL to a persistent QR-login worker before scanning personal WhatsApp.");
+  }
+
+  bridgeState.running = true;
+  bridgeState.lastStartedAt = new Date().toISOString();
+  bridgeState.lastError = null;
+  bridgeState.lastEndpoint = endpoint;
+
+  try {
+    const response = await fetch(endpoint, {
+      method: "POST",
+      headers: buildPersonalBridgeHeaders(config),
+      body: JSON.stringify({
+        recentMinutes: config.whatsappRecentMinutes,
+        chatLimit: config.whatsappChatLimit,
+        lookbackLimit: config.whatsappLookbackLimit,
+        processLimit: config.whatsappProcessLimit,
+        searchTerms: config.whatsappSearchTerms
+      })
+    });
+    const result = await readBridgeJsonResponse(response);
+    if (!response.ok) {
+      throw new Error(result.error || result.message || `Personal WhatsApp bridge returned ${response.status}.`);
+    }
+
+    const mirroredOpportunities = await mirrorBridgeOpportunities(result.opportunities || [], config);
+    bridgeState.lastScannedChats = Number(result.scannedChats ?? result.sync?.lastScannedChats ?? 0);
+    bridgeState.lastScannedMessages = Number(result.scannedMessages ?? result.sync?.lastScannedMessages ?? 0);
+    bridgeState.lastMatched = Number(result.matched ?? result.sync?.lastMatched ?? 0);
+    bridgeState.lastProcessed = Number(result.processed ?? result.sync?.lastProcessed ?? 0);
+    bridgeState.lastReadyForApproval = Number(result.readyForApproval ?? result.sync?.lastReadyForApproval ?? 0);
+    bridgeState.lastSince = result.since || result.sync?.lastSince || null;
+    bridgeState.lastMatches = result.matches || result.sync?.lastMatches || [];
+    bridgeState.lastFinishedAt = new Date().toISOString();
+    bridgeState.running = false;
+
+    return {
+      ...getWhatsAppStatus(config),
+      ...result,
+      connector: "personal-bridge",
+      endpoint,
+      opportunities: mirroredOpportunities.length ? mirroredOpportunities : result.opportunities || []
+    };
+  } catch (error) {
+    bridgeState.lastError = cleanErrorMessage(error);
+    bridgeState.lastFinishedAt = new Date().toISOString();
+    throw error;
+  } finally {
+    bridgeState.running = false;
+  }
+}
+
+async function mirrorBridgeOpportunities(records, config) {
+  const mirrored = [];
+  for (const record of records) {
+    mirrored.push(
+      await saveOpportunitySnapshot(prepareApprovalRecord(record), {
+        backend: config.opportunityStoreBackend
+      })
+    );
+  }
+  return mirrored;
 }
 
 export function verifyWhatsAppCloudWebhook(config, url) {
@@ -721,12 +854,15 @@ function hashText(value) {
   return createHash("sha256").update(String(value || "")).digest("hex").slice(0, 16);
 }
 
-function getConnectionStatus({ enabled, connector, webEnabled, cloudEnabled, cloudReady }) {
+function getConnectionStatus({ enabled, connector, webEnabled, cloudEnabled, cloudReady, bridgeEnabled, bridgeReady }) {
   if (!enabled) {
     return "disabled";
   }
   if (connector === "cloud-api" || cloudEnabled) {
     return cloudReady ? "webhook_ready" : "cloud_setup_required";
+  }
+  if (connector === "personal-bridge" || bridgeEnabled) {
+    return bridgeReady ? "bridge_ready" : "bridge_setup_required";
   }
   if (!webEnabled) {
     return "disabled";
@@ -740,15 +876,21 @@ function getConnectionError({
   webEnabled,
   cloudEnabled,
   cloudReady,
+  bridgeEnabled,
+  bridgeReady,
   disabledReason,
   qrDisabledReason,
-  cloudSetupMessage
+  cloudSetupMessage,
+  bridgeSetupMessage
 }) {
   if (!enabled) {
     return disabledReason;
   }
   if (connector === "cloud-api" || cloudEnabled) {
     return cloudState.lastError || (cloudReady ? null : cloudSetupMessage);
+  }
+  if (connector === "personal-bridge" || bridgeEnabled) {
+    return bridgeState.lastError || (bridgeReady ? null : bridgeSetupMessage);
   }
   if (!webEnabled) {
     return qrDisabledReason;
@@ -766,6 +908,59 @@ function buildWebhookUrl(config) {
   } catch {
     return pathname;
   }
+}
+
+function buildPersonalBridgeUrl(config) {
+  if (!config.whatsappPersonalBridgeUrl) {
+    return "";
+  }
+
+  try {
+    const url = new URL(config.whatsappPersonalBridgeUrl);
+    const path = config.whatsappPersonalBridgePath || "/whatsapp/personal/recent";
+    url.pathname = path.startsWith("/") ? path : `/${path}`;
+    url.search = "";
+    return url.toString();
+  } catch {
+    return "";
+  }
+}
+
+function buildPersonalBridgeHeaders(config) {
+  const headers = {
+    "Content-Type": "application/json"
+  };
+  if (config.whatsappPersonalBridgeToken) {
+    headers.Authorization = `Bearer ${config.whatsappPersonalBridgeToken}`;
+  }
+  return headers;
+}
+
+async function readBridgeJsonResponse(response) {
+  const text = await response.text();
+  try {
+    return text ? JSON.parse(text) : {};
+  } catch {
+    return {
+      error: text || "Unexpected personal WhatsApp bridge response."
+    };
+  }
+}
+
+function getRecentSince(config) {
+  const minutes = Math.max(1, Number(config.whatsappRecentMinutes || 5));
+  return new Date(Date.now() - minutes * 60 * 1000);
+}
+
+export function isRecentWhatsAppMessage(message, since) {
+  if (!since) {
+    return true;
+  }
+  const timestamp = Number(message?.timestamp || 0);
+  if (!timestamp) {
+    return false;
+  }
+  return timestamp * 1000 >= since.getTime();
 }
 
 function isValidCloudSignature(config, rawBody, signatureHeader) {

@@ -74,6 +74,23 @@ async function handleRequest(request, response) {
       return sendJson(response, 200, result);
     }
 
+    if (request.method === "POST" && url.pathname === "/whatsapp/personal/recent") {
+      const body = await readJsonBody(request);
+      if (!isPersonalBridgeAuthorized(config, request)) {
+        return sendJson(response, 401, {
+          ok: false,
+          message: "Personal WhatsApp bridge token is invalid."
+        });
+      }
+      if (!config.whatsappWebEnabled) {
+        return sendJson(response, 409, {
+          ok: false,
+          message: "This endpoint must run on the persistent personal WhatsApp worker with WHATSAPP_CONNECTOR=web."
+        });
+      }
+      return sendJson(response, 200, await syncWhatsAppSalesOrderMessages(buildPersonalWorkerConfig(config, body)));
+    }
+
     if (request.method === "POST" && url.pathname === "/whatsapp/start") {
       return sendJson(response, 200, await startWhatsAppClient(config));
     }
@@ -504,6 +521,37 @@ function getHeader(request, name) {
     return request.headers.get(name);
   }
   return request.headers?.[name.toLowerCase()] || request.headers?.[name] || "";
+}
+
+function isPersonalBridgeAuthorized(config, request) {
+  if (!config.whatsappPersonalBridgeToken) {
+    return true;
+  }
+  const authorization = getHeader(request, "authorization");
+  const bearerToken = authorization.replace(/^Bearer\s+/i, "").trim();
+  const headerToken = getHeader(request, "x-whatsapp-bridge-token").trim();
+  return bearerToken === config.whatsappPersonalBridgeToken || headerToken === config.whatsappPersonalBridgeToken;
+}
+
+function buildPersonalWorkerConfig(baseConfig, body = {}) {
+  return {
+    ...baseConfig,
+    whatsappEnabled: true,
+    whatsappConnector: "web",
+    whatsappWebEnabled: true,
+    whatsappCloudEnabled: false,
+    whatsappPersonalBridgeEnabled: false,
+    whatsappRecentMinutes: numberOrDefault(body.recentMinutes, baseConfig.whatsappRecentMinutes),
+    whatsappChatLimit: numberOrDefault(body.chatLimit, baseConfig.whatsappChatLimit),
+    whatsappLookbackLimit: numberOrDefault(body.lookbackLimit, baseConfig.whatsappLookbackLimit),
+    whatsappProcessLimit: numberOrDefault(body.processLimit, baseConfig.whatsappProcessLimit),
+    whatsappSearchTerms: Array.isArray(body.searchTerms) && body.searchTerms.length ? body.searchTerms : baseConfig.whatsappSearchTerms
+  };
+}
+
+function numberOrDefault(value, fallback) {
+  const number = Number(value);
+  return Number.isFinite(number) && number > 0 ? number : fallback;
 }
 
 async function tryServeStatic(pathname, response) {

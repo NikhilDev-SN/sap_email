@@ -259,6 +259,13 @@ async function startWhatsAppLogin() {
       : "Set WHATSAPP_CLOUD_VERIFY_TOKEN in the deployment, then verify the webhook in Meta.";
     return;
   }
+  if (whatsappStatus?.connector === "personal-bridge") {
+    await loadWhatsAppStatus();
+    whatsappActionStatus.textContent = whatsappStatus?.personalBridge?.configured
+      ? "Personal WhatsApp worker is configured. Fetch recent messages to scan the last few minutes."
+      : "Set WHATSAPP_PERSONAL_BRIDGE_URL to a persistent QR-login worker.";
+    return;
+  }
 
   await runWhatsAppAction({
     button: whatsappStartButton,
@@ -338,14 +345,15 @@ function updateWhatsAppStatus(status) {
   const sync = status.sync || {};
   const statusLabel = formatWhatsAppConnection(status);
   const cloudMode = status.connector === "cloud-api";
+  const bridgeMode = status.connector === "personal-bridge";
 
   whatsappStatusText.textContent = `WhatsApp: ${statusLabel}`;
   whatsappLoginStatus.textContent = formatWhatsAppLoginStatus(status);
   whatsappScanStatus.textContent = formatWhatsAppScanStatus(status);
   whatsappScanButton.disabled = cloudMode || !status.ready || sync.running;
   whatsappStartButton.disabled = !status.enabled || status.starting;
-  whatsappStartButton.textContent = cloudMode ? "Webhook mode" : "Start QR login";
-  whatsappScanButton.textContent = cloudMode ? "Webhook intake" : "Scan messages";
+  whatsappStartButton.textContent = cloudMode ? "Webhook mode" : bridgeMode ? "Bridge mode" : "Start QR login";
+  whatsappScanButton.textContent = cloudMode ? "Webhook intake" : bridgeMode ? "Fetch recent" : "Scan messages";
 
   kpis.whatsappConnection.textContent = statusLabel;
   kpis.whatsappScanned.textContent = String(sync.lastScannedMessages || 0);
@@ -370,7 +378,14 @@ function updateWhatsAppStatus(status) {
         ["Verify token", status.cloudApi?.verifyTokenConfigured ? "Configured" : "Missing"],
         ["Last webhook", formatDateTime(status.cloudApi?.lastWebhookAt)]
       ]
-    : [
+    : bridgeMode
+      ? [
+          ["Connector", "Personal WhatsApp bridge"],
+          ["Worker", status.personalBridge?.endpoint || "-"],
+          ["Recent window", `${status.personalBridge?.recentMinutes || status.search?.recentMinutes || 5} minutes`],
+          ["Last fetch", formatDateTime(sync.lastFinishedAt)]
+        ]
+      : [
         ["Connector", "QR login"],
         ["Search", (status.search?.terms || []).join(", ") || "-"],
         ["Chat limit", status.search?.chatLimit || "-"],
@@ -1179,6 +1194,12 @@ function formatWhatsAppConnection(status) {
   if (value === "cloud_setup_required") {
     return "Setup needed";
   }
+  if (value === "bridge_ready") {
+    return "Bridge ready";
+  }
+  if (value === "bridge_setup_required") {
+    return "Setup needed";
+  }
   if (status?.ready) {
     return "Connected";
   }
@@ -1216,6 +1237,12 @@ function formatWhatsAppLoginStatus(status) {
     }
     return status.lastError || `Set WHATSAPP_CLOUD_VERIFY_TOKEN and use ${status.cloudApi?.webhookUrl || "/whatsapp/webhook"} as the Meta callback URL.`;
   }
+  if (status?.connector === "personal-bridge") {
+    if (status.personalBridge?.configured) {
+      return `Personal WhatsApp bridge ready: ${status.personalBridge.endpoint}.`;
+    }
+    return status.lastError || "Set WHATSAPP_PERSONAL_BRIDGE_URL to a persistent QR-login worker.";
+  }
   if (status?.lastError) {
     return status.lastError;
   }
@@ -1248,6 +1275,19 @@ function formatWhatsAppScanStatus(status) {
     }
     return "Incoming WhatsApp messages are processed automatically by webhook.";
   }
+  if (status?.connector === "personal-bridge") {
+    const sync = status?.sync || {};
+    if (!status.personalBridge?.configured) {
+      return "Bridge setup is waiting for the personal worker URL.";
+    }
+    if (sync.running) {
+      return "Fetching recent personal WhatsApp messages.";
+    }
+    if (sync.lastFinishedAt) {
+      return `${sync.lastMatched || 0} matched from ${sync.lastScannedMessages || 0} messages since ${formatDateTime(sync.lastSince)}.`;
+    }
+    return `Fetch messages received in the last ${status.personalBridge?.recentMinutes || status.search?.recentMinutes || 5} minutes.`;
+  }
   const sync = status?.sync || {};
   if (sync.running) {
     return "WhatsApp scan running.";
@@ -1264,6 +1304,9 @@ function formatWhatsAppScanStatus(status) {
 function getWhatsAppPlaceholder(status) {
   if (status?.connector === "cloud-api") {
     return status.cloudApi?.configured ? "Webhook ready" : "Setup needed";
+  }
+  if (status?.connector === "personal-bridge") {
+    return status.personalBridge?.configured ? "Bridge ready" : "Setup needed";
   }
   return status?.ready ? "Connected" : "No QR code yet";
 }
